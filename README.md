@@ -30,13 +30,9 @@ python src/client.py
 or hit the API directly:
 
 ```bash
-# single prompt
-curl -X POST http://127.0.0.1:8000/basic_generate \
-  -H 'Content-Type: application/json' -d '{"prompt": "Once upon a time"}'
-
-# batch — prompts are batched into one forward pass
+# prompts are batched into one forward pass
 curl -X POST http://127.0.0.1:8000/generate \
-  -H 'Content-Type: application/json' -d '{"prompts": ["One", "Two", "Three"]}'
+  -H 'Content-Type: application/json' -d '{"prompts": ["Once upon a time"]}'
 ```
 
 Default model is `facebook/opt-125m` (downloads on first run), on CUDA/MPS/CPU — whatever is available.
