@@ -1,4 +1,5 @@
 import json
+import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -17,7 +18,7 @@ engine: LLMEngine | None = None
 async def lifespan(_app: FastAPI):
     # Load the model on server startup, not import (imports must stay cheap).
     global engine
-    engine = LLMEngine()
+    engine = LLMEngine(os.environ.get("NANO_VLLM_MODEL", "facebook/opt-125m"))
     yield
 
 

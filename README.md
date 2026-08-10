@@ -41,7 +41,13 @@ curl -N -X POST http://127.0.0.1:8000/generate_stream \
 
 The client streams by default; pass `--no-streaming` to wait for the full completion.
 
-Default model is `facebook/opt-125m` (downloads on first run), on CUDA/MPS/CPU — whatever is available.
+Default model is `facebook/opt-125m` (downloads on first run), on CUDA/MPS/CPU — whatever is available. Pick a different model with the `NANO_VLLM_MODEL` env var:
+
+```bash
+NANO_VLLM_MODEL=Qwen/Qwen2.5-1.5B-Instruct uv run uvicorn main:app
+```
+
+Models load in their checkpoint's native precision (fp16/bf16), so a ~1.5B model fits comfortably in 6 GB of VRAM.
 
 ## Roadmap
 

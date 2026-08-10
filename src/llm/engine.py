@@ -12,14 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 class LLMEngine:
-    def __init__(self):
+    def __init__(self, model_name: str = "facebook/opt-125m"):
         self.model_executor = ModelExecutor()
         self.workload_manager = WorkloadManager()
         # Per-streaming-request queues the scheduler pushes new tokens into.
         self.streams: dict[str, queue.Queue[str | None]] = {}
 
-        # Set up the model executor worker for the default model.
-        self.model_executor.setup_worker("facebook/opt-125m")
+        self.model_executor.setup_worker(model_name)
 
         # The scheduler is the only caller of the executor. It re-forms the
         # batch from all unfinished sequences after every single-token step,
