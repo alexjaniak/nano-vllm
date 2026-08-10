@@ -34,36 +34,32 @@ class ModelWorker:
         # the id just has to exist.
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+        # Left-pad so every row's *last* position is real text; logits[:, -1]
+        # is then the next-token prediction for the whole batch at once.
+        self.tokenizer.padding_side = "left"
         logger.info("loaded %s on %s", model_name, self.device)
 
-    def generate(self, batch: list[Sequence]) -> list[Sequence]:
-        # Pad prompts to equal length so the batch forms one rectangular tensor.
+    def forward_step(self, batch: list[Sequence]) -> list[Sequence]:
+        # One forward pass, one new token per sequence. Re-tokenizing the full
+        # text every step is O(n^2) — the KV cache will fix this later.
         encoded = self.tokenizer(
-            [sequence.prompt for sequence in batch],
+            [sequence.prompt + sequence.output for sequence in batch],
             return_tensors="pt",
             padding=True,
             truncation=True,
         ).to(self.device)
 
         with torch.no_grad():
-            output = self.model.generate(
-                **encoded,
-                max_new_tokens=MAX_NEW_TOKENS,
-                # Rows that hit EOS early are filled with this token while the
-                # rest of the batch keeps generating.
-                pad_token_id=self.tokenizer.eos_token_id,
-            )
+            output = self.model(**encoded)
 
-        # Count real generated tokens: everything past the prompt, minus the
-        # EOS fill that pads out rows that finished early.
-        generated = output[:, encoded.input_ids.shape[1] :]
-        token_count = int((generated != self.tokenizer.eos_token_id).sum())
-        logger.info("batch of %d sequence(s): generated %d token(s)", len(batch), token_count)
-
-        texts = self.tokenizer.batch_decode(output, skip_special_tokens=True)
-        for sequence, text in zip(batch, texts):
-            sequence.output = text
-            sequence.finished = True
+        # Greedy decoding: most likely token at the final position of each row.
+        next_tokens = output.logits[:, -1, :].argmax(dim=-1).tolist()
+        for sequence, token_id in zip(batch, next_tokens):
+            sequence.token_count += 1
+            if token_id == self.tokenizer.eos_token_id or sequence.token_count >= MAX_NEW_TOKENS:
+                sequence.finished = True
+            if token_id != self.tokenizer.eos_token_id:
+                sequence.output += str(self.tokenizer.decode([token_id]))
         return batch
 
     @staticmethod
@@ -72,9 +68,9 @@ class ModelWorker:
         task_queue: mp.Queue[list[Sequence]],
         result_queue: mp.Queue[list[Sequence]],
     ):
-        # Worker process entry point: load the model once, serve batches forever.
+        # Worker process entry point: load the model once, serve steps forever.
         setup_logging()
         worker = ModelWorker(model_name)
         while True:
             batch = task_queue.get()
-            result_queue.put(worker.generate(batch))
+            result_queue.put(worker.forward_step(batch))

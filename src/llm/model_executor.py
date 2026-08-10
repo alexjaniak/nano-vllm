@@ -1,6 +1,5 @@
 import logging
 import multiprocessing as mp
-import threading
 
 from .model_worker import ModelWorker
 from .workload_manager import Sequence
@@ -13,8 +12,6 @@ class ModelExecutor:
         self.task_queue: mp.Queue[list[Sequence]] = mp.Queue()
         self.result_queue: mp.Queue[list[Sequence]] = mp.Queue()
         self.worker_process: mp.Process | None = None
-        # Serializes put/get pairs so concurrent callers can't swap results.
-        self._lock = threading.Lock()
 
     def setup_worker(self, model_name: str):
         # The model runs in its own process so a slow forward pass never
@@ -27,7 +24,5 @@ class ModelExecutor:
         logger.info("worker process started (pid=%s)", self.worker_process.pid)
 
     def execute_batch(self, batch: list[Sequence]) -> list[Sequence]:
-        with self._lock:
-            self.task_queue.put(batch)
-            results = self.result_queue.get()
-        return results
+        self.task_queue.put(batch)
+        return self.result_queue.get()

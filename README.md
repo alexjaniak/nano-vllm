@@ -30,10 +30,16 @@ python src/client.py
 or hit the API directly:
 
 ```bash
-# prompts are batched into one forward pass
+# batch generation — prompts share forward passes
 curl -X POST http://127.0.0.1:8000/generate \
   -H 'Content-Type: application/json' -d '{"prompts": ["Once upon a time"]}'
+
+# token streaming (SSE)
+curl -N -X POST http://127.0.0.1:8000/generate_stream \
+  -H 'Content-Type: application/json' -d '{"prompt": "Once upon a time"}'
 ```
+
+The client streams by default; pass `--no-streaming` to wait for the full completion.
 
 Default model is `facebook/opt-125m` (downloads on first run), on CUDA/MPS/CPU — whatever is available.
 
@@ -41,7 +47,7 @@ Default model is `facebook/opt-125m` (downloads on first run), on CUDA/MPS/CPU �
 
 - [x] Model worker in a separate process
 - [x] Batched generation with request correlation
-- [ ] Token streaming (SSE)
-- [ ] Continuous batching
-- [ ] KV-cache / paged attention
+- [x] Token streaming (SSE)
+- [x] Continuous batching (token-level scheduler; new requests join mid-generation)
+- [ ] KV cache / paged attention
 - [ ] Multi-model serving
