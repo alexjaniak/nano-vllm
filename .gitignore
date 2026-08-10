@@ -43,3 +43,4 @@ Thumbs.db
 .env
 .env.*
 .ipynb_checkpoints/
+bench_results.json
