@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 from fastapi import FastAPI
 
-from engine import LLMEngine
-from logging_config import setup_logging
+from llm import LLMEngine
+from llm.logging_config import setup_logging
 
 setup_logging()
 

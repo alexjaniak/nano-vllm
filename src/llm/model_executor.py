@@ -2,8 +2,8 @@ import logging
 import multiprocessing as mp
 import threading
 
-from model_worker import ModelWorker
-from workload_manager import Sequence
+from .model_worker import ModelWorker
+from .workload_manager import Sequence
 
 logger = logging.getLogger(__name__)
 

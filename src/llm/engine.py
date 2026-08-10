@@ -1,8 +1,8 @@
 import logging
 import time
 
-from model_executor import ModelExecutor
-from workload_manager import WorkloadManager
+from .model_executor import ModelExecutor
+from .workload_manager import WorkloadManager
 
 logger = logging.getLogger(__name__)
 

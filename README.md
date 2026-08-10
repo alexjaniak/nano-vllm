@@ -5,8 +5,8 @@ A tiny LLM inference server, built from scratch to learn how systems like [vLLM]
 ## Architecture
 
 ```
-FastAPI (main.py)
-  └── LLMEngine (engine.py)            request lifecycle
+FastAPI (src/main.py)
+  └── LLMEngine (src/llm/engine.py)    request lifecycle
         ├── WorkloadManager            queues sequences, forms FIFO batches
         └── ModelExecutor              owns the worker process + task/result queues
               └── ModelWorker          separate process: loads the model, runs batched generate()

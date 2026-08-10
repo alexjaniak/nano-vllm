@@ -5,9 +5,9 @@ import multiprocessing as mp
 
 import torch
 
-from logging_config import setup_logging
-from model_manager import ModelManager
-from workload_manager import Sequence
+from .logging_config import setup_logging
+from .model_manager import ModelManager
+from .workload_manager import Sequence
 
 logger = logging.getLogger(__name__)
 
