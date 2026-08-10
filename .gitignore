@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Packaging/build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+.Python
+.pytest_cache/
+.mypy_cache/
+.pytype/
+.ruff_cache/
+.tox/
+.hypothesis/
+.nox/
+.coverage
+htmlcov/
+
+# uv
+.uv/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+.DS_Store
+Thumbs.db
+.env
+.env.*
+.ipynb_checkpoints/
