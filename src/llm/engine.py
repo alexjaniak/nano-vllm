@@ -45,9 +45,9 @@ class LLMEngine:
                         "finished %s: %d token(s)", sequence.request_id[:8], sequence.token_count
                     )
 
-    def generate(self, prompts: list[str]) -> list[str]:
+    def generate(self, prompts: list[str], temperature: float = 0.7) -> list[str]:
         # Queue every prompt, wait for the scheduler to finish them all.
-        request_ids = [self.workload_manager.add_request(prompt) for prompt in prompts]
+        request_ids = [self.workload_manager.add_request(prompt, temperature) for prompt in prompts]
         logger.info("queued %d request(s)", len(request_ids))
         while not all(self.workload_manager.is_finished(request_id) for request_id in request_ids):
             time.sleep(0.01)
@@ -59,13 +59,13 @@ class LLMEngine:
             outputs.append(sequence.output)
         return outputs
 
-    def stream(self, prompt: str) -> Iterator[str]:
+    def stream(self, prompt: str, temperature: float = 0.7) -> Iterator[str]:
         # Register the stream *before* the scheduler can see the sequence,
         # so the first tokens can't slip past us.
         request_id = str(uuid.uuid4())
         stream: queue.Queue[str | None] = queue.Queue()
         self.streams[request_id] = stream
-        self.workload_manager.add_request(prompt, request_id)
+        self.workload_manager.add_request(prompt, temperature, request_id)
         try:
             while (token := stream.get()) is not None:
                 yield token

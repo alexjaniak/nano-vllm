@@ -55,5 +55,6 @@ Models load in their checkpoint's native precision (fp16/bf16), so a ~1.5B model
 - [x] Batched generation with request correlation
 - [x] Token streaming (SSE)
 - [x] Continuous batching (token-level scheduler; new requests join mid-generation)
-- [ ] KV cache / paged attention
+- [x] KV cache (per-sequence; prefill once, then one token per forward pass)
+- [ ] Paged attention (batch ragged caches back together)
 - [ ] Multi-model serving

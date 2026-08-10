@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import multiprocessing as mp
+from typing import Any
 
 import torch
+from transformers import DynamicCache
 
 from .logging_config import setup_logging
 from .model_manager import ModelManager
@@ -29,37 +31,58 @@ class ModelWorker:
         self.device = get_device()
         self.model, self.tokenizer = ModelManager().load_model(model_name)
         self.model = self.model.to(self.device)
-        # Causal LMs are trained without padding, so many ship without a pad
-        # token. Reuse EOS: padded positions are masked out of attention, so
-        # the id just has to exist.
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-        # Left-pad so every row's *last* position is real text; logits[:, -1]
-        # is then the next-token prediction for the whole batch at once.
-        self.tokenizer.padding_side = "left"
+        # Per-sequence KV cache: request_id -> (cache, next input token id).
+        # The cache holds every past position's attention keys/values, so a
+        # decode step only computes attention for the one new token instead
+        # of re-processing the whole text — O(n) generation instead of O(n^2).
+        # It lives here (not on Sequence) because cache tensors are far too
+        # big to ship through the mp queues every step.
+        self.states: dict[str, tuple[Any, int]] = {}
         logger.info("loaded %s on %s", model_name, self.device)
 
     def forward_step(self, batch: list[Sequence]) -> list[Sequence]:
-        # One forward pass, one new token per sequence. Re-tokenizing the full
-        # text every step is O(n^2) — the KV cache will fix this later.
-        encoded = self.tokenizer(
-            [sequence.prompt + sequence.output for sequence in batch],
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-        ).to(self.device)
+        # One new token per sequence. Each sequence runs its own forward pass:
+        # per-sequence caches have different lengths, and batching ragged
+        # caches is exactly the problem paged attention solves (next).
+        for sequence in batch:
+            state = self.states.get(sequence.request_id)
+            if state is None:
+                # Prefill: process the whole prompt once, caching every
+                # position's K/V along the way.
+                input_ids = self.tokenizer(sequence.prompt, return_tensors="pt").input_ids.to(
+                    self.device
+                )
+                cache = DynamicCache()
+            else:
+                # Decode: feed only the previous token; everything before it
+                # is already in the cache.
+                cache, last_token = state
+                input_ids = torch.tensor([[last_token]], device=self.device)
 
-        with torch.no_grad():
-            output = self.model(**encoded)
+            with torch.no_grad():
+                output = self.model(input_ids=input_ids, past_key_values=cache, use_cache=True)
 
-        # Greedy decoding: most likely token at the final position of each row.
-        next_tokens = output.logits[:, -1, :].argmax(dim=-1).tolist()
-        for sequence, token_id in zip(batch, next_tokens):
+            # Temperature sampling: scale the logits, then draw from the
+            # distribution. Higher temperature flattens it (more random);
+            # 0 means greedy (always the most likely token).
+            logits = output.logits[0, -1]
+            if sequence.temperature > 0:
+                probs = torch.softmax(logits / sequence.temperature, dim=-1)
+                token_id = int(torch.multinomial(probs, num_samples=1))
+            else:
+                token_id = int(logits.argmax())
             sequence.token_count += 1
             if token_id == self.tokenizer.eos_token_id or sequence.token_count >= MAX_NEW_TOKENS:
                 sequence.finished = True
-            if token_id != self.tokenizer.eos_token_id:
+                self.states.pop(sequence.request_id, None)
+            else:
                 sequence.output += str(self.tokenizer.decode([token_id]))
+                self.states[sequence.request_id] = (output.past_key_values, token_id)
+
+        # A sequence that stops appearing in batches was dropped mid-flight
+        # (client disconnect) — free its cache.
+        batch_ids = {sequence.request_id for sequence in batch}
+        self.states = {rid: state for rid, state in self.states.items() if rid in batch_ids}
         return batch
 
     @staticmethod

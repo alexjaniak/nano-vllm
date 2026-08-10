@@ -28,6 +28,7 @@ app = FastAPI(title="nano-vllm", lifespan=lifespan)
 @dataclass
 class GenerateRequest:
     prompts: list[str]
+    temperature: float = 0.7
 
 
 @dataclass
@@ -38,6 +39,7 @@ class GenerateResponse:
 @dataclass
 class StreamRequest:
     prompt: str
+    temperature: float = 0.7
 
 
 @app.get("/health")
@@ -48,7 +50,7 @@ def health():
 @app.post("/generate", response_model=GenerateResponse)
 def generate(request: GenerateRequest):
     assert engine is not None
-    return GenerateResponse(texts=engine.generate(request.prompts))
+    return GenerateResponse(texts=engine.generate(request.prompts, request.temperature))
 
 
 @app.post("/generate_stream")
@@ -58,7 +60,7 @@ def generate_stream(request: StreamRequest):
 
     def event_stream():
         # Server-sent events: one "data: {...}" line per generated token.
-        for token in llm.stream(request.prompt):
+        for token in llm.stream(request.prompt, request.temperature):
             yield f"data: {json.dumps({'token': token})}\n\n"
         yield "data: [DONE]\n\n"
 

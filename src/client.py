@@ -18,13 +18,13 @@ def post(path: str, payload: dict[str, object]):
     return urllib.request.urlopen(request)
 
 
-def ask(prompt: str) -> None:
-    with post("/generate", {"prompts": [prompt]}) as response:
+def ask(prompt: str, temperature: float) -> None:
+    with post("/generate", {"prompts": [prompt], "temperature": temperature}) as response:
         print(json.loads(response.read())["texts"][0])
 
 
-def ask_streaming(prompt: str) -> None:
-    with post("/generate_stream", {"prompt": prompt}) as response:
+def ask_streaming(prompt: str, temperature: float) -> None:
+    with post("/generate_stream", {"prompt": prompt, "temperature": temperature}) as response:
         for raw_line in response:
             line = raw_line.decode().strip()
             if not line.startswith("data: "):
@@ -43,6 +43,12 @@ def main() -> None:
         action="store_true",
         help="wait for the full completion instead of streaming tokens",
     )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.7,
+        help="sampling randomness; 0 for greedy decoding",
+    )
     args = parser.parse_args()
 
     while True:
@@ -53,9 +59,9 @@ def main() -> None:
         if not prompt:
             break
         if args.no_streaming:
-            ask(prompt)
+            ask(prompt, args.temperature)
         else:
-            ask_streaming(prompt)
+            ask_streaming(prompt, args.temperature)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ class Sequence:
     # The worker appends one token to `output` per step and flips `finished`.
     request_id: str
     prompt: str
+    temperature: float = 0.7  # sampling randomness; 0 = greedy
     output: str = ""
     token_count: int = 0
     finished: bool = False
@@ -21,9 +22,13 @@ class WorkloadManager:
         # Request threads add/pop while the scheduler thread batches/updates.
         self._lock = threading.Lock()
 
-    def add_request(self, prompt: str, request_id: str | None = None) -> str:
+    def add_request(self, prompt: str, temperature: float = 0.7, request_id: str | None = None) -> str:
         with self._lock:
-            sequence = Sequence(request_id=request_id or str(uuid.uuid4()), prompt=prompt)
+            sequence = Sequence(
+                request_id=request_id or str(uuid.uuid4()),
+                prompt=prompt,
+                temperature=temperature,
+            )
             self.sequences[sequence.request_id] = sequence
             return sequence.request_id
 
