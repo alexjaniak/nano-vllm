@@ -9,10 +9,13 @@ class Sequence:
     # The worker appends one token to `output` per step and flips `finished`.
     request_id: str
     prompt: str
-    temperature: float = 0.7  # sampling randomness; 0 = greedy
+    temperature: float = 1.0  # sampling randomness; 0 = greedy
+    max_tokens: int = 16  # generation cap (OpenAI's default)
     output: str = ""
+    prompt_tokens: int = 0
     token_count: int = 0
     finished: bool = False
+    finish_reason: str | None = None  # "stop" (EOS) or "length" (hit max_tokens)
 
 
 class WorkloadManager:
@@ -22,12 +25,19 @@ class WorkloadManager:
         # Request threads add/pop while the scheduler thread batches/updates.
         self._lock = threading.Lock()
 
-    def add_request(self, prompt: str, temperature: float = 0.7, request_id: str | None = None) -> str:
+    def add_request(
+        self,
+        prompt: str,
+        temperature: float = 1.0,
+        max_tokens: int = 16,
+        request_id: str | None = None,
+    ) -> str:
         with self._lock:
             sequence = Sequence(
                 request_id=request_id or str(uuid.uuid4()),
                 prompt=prompt,
                 temperature=temperature,
+                max_tokens=max_tokens,
             )
             self.sequences[sequence.request_id] = sequence
             return sequence.request_id

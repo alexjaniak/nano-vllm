@@ -7,24 +7,34 @@ import argparse
 import json
 import urllib.request
 
-BASE_URL = "http://127.0.0.1:8000"
+def get_model(base_url: str) -> str:
+    with urllib.request.urlopen(f"{base_url}/v1/models") as response:
+        return json.load(response)["data"][0]["id"]
 
 
-def post(path: str, payload: dict[str, object]):
-    body = json.dumps(payload).encode()
+def complete(base_url: str, model: str, prompt: str, temperature: float, max_tokens: int, stream: bool):
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": stream,
+    }
     request = urllib.request.Request(
-        f"{BASE_URL}{path}", data=body, headers={"Content-Type": "application/json"}
+        f"{base_url}/v1/completions",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
     )
     return urllib.request.urlopen(request)
 
 
-def ask(prompt: str, temperature: float) -> None:
-    with post("/generate", {"prompts": [prompt], "temperature": temperature}) as response:
-        print(json.loads(response.read())["texts"][0])
+def ask(base_url: str, model: str, prompt: str, temperature: float, max_tokens: int) -> None:
+    with complete(base_url, model, prompt, temperature, max_tokens, stream=False) as response:
+        print(json.loads(response.read())["choices"][0]["text"])
 
 
-def ask_streaming(prompt: str, temperature: float) -> None:
-    with post("/generate_stream", {"prompt": prompt, "temperature": temperature}) as response:
+def ask_streaming(base_url: str, model: str, prompt: str, temperature: float, max_tokens: int) -> None:
+    with complete(base_url, model, prompt, temperature, max_tokens, stream=True) as response:
         for raw_line in response:
             line = raw_line.decode().strip()
             if not line.startswith("data: "):
@@ -32,12 +42,13 @@ def ask_streaming(prompt: str, temperature: float) -> None:
             data = line.removeprefix("data: ")
             if data == "[DONE]":
                 break
-            print(json.loads(data)["token"], end="", flush=True)
+            print(json.loads(data)["choices"][0]["text"], end="", flush=True)
     print()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Interactive nano-vllm client")
+    parser.add_argument("--url", default="http://127.0.0.1:8000")
     parser.add_argument(
         "--no-streaming",
         action="store_true",
@@ -49,8 +60,16 @@ def main() -> None:
         default=0.7,
         help="sampling randomness; 0 for greedy decoding",
     )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=100,
+        help="cap on generated tokens per completion",
+    )
     args = parser.parse_args()
 
+    model = get_model(args.url)
+    print(f"model: {model}")
     while True:
         try:
             prompt = input("prompt> ").strip()
@@ -59,9 +78,9 @@ def main() -> None:
         if not prompt:
             break
         if args.no_streaming:
-            ask(prompt, args.temperature)
+            ask(args.url, model, prompt, args.temperature, args.max_tokens)
         else:
-            ask_streaming(prompt, args.temperature)
+            ask_streaming(args.url, model, prompt, args.temperature, args.max_tokens)
 
 
 if __name__ == "__main__":

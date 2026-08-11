@@ -13,9 +13,6 @@ from .workload_manager import Sequence
 
 logger = logging.getLogger(__name__)
 
-# Cap on generated tokens per request (prompt length not counted).
-MAX_NEW_TOKENS = 50
-
 
 def get_device() -> str:
     # Prefer CUDA (NVIDIA), then MPS (Apple Silicon), then fall back to CPU.
@@ -52,6 +49,7 @@ class ModelWorker:
                 input_ids = self.tokenizer(sequence.prompt, return_tensors="pt").input_ids.to(
                     self.device
                 )
+                sequence.prompt_tokens = input_ids.shape[1]
                 cache = DynamicCache()
             else:
                 # Decode: feed only the previous token; everything before it
@@ -72,12 +70,18 @@ class ModelWorker:
             else:
                 token_id = int(logits.argmax())
             sequence.token_count += 1
-            if token_id == self.tokenizer.eos_token_id or sequence.token_count >= MAX_NEW_TOKENS:
+            if token_id == self.tokenizer.eos_token_id:
                 sequence.finished = True
+                sequence.finish_reason = "stop"
                 self.states.pop(sequence.request_id, None)
             else:
                 sequence.output += str(self.tokenizer.decode([token_id]))
-                self.states[sequence.request_id] = (output.past_key_values, token_id)
+                if sequence.token_count >= sequence.max_tokens:
+                    sequence.finished = True
+                    sequence.finish_reason = "length"
+                    self.states.pop(sequence.request_id, None)
+                else:
+                    self.states[sequence.request_id] = (output.past_key_values, token_id)
 
         # A sequence that stops appearing in batches was dropped mid-flight
         # (client disconnect) — free its cache.
