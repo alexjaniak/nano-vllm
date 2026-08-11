@@ -92,12 +92,14 @@ class ModelWorker:
     @staticmethod
     def run(
         model_name: str,
-        task_queue: mp.Queue[list[Sequence]],
+        task_queue: mp.Queue[list[Sequence] | None],
         result_queue: mp.Queue[list[Sequence]],
     ):
-        # Worker process entry point: load the model once, serve steps forever.
+        # Worker process entry point: load the model once, serve steps until
+        # the shutdown sentinel (None) arrives. Exiting the process is what
+        # frees the model's GPU memory.
         setup_logging()
         worker = ModelWorker(model_name)
-        while True:
-            batch = task_queue.get()
+        while (batch := task_queue.get()) is not None:
             result_queue.put(worker.forward_step(batch))
+        logger.info("worker exiting")

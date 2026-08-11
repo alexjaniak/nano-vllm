@@ -25,6 +25,9 @@ async def lifespan(_app: FastAPI):
     global engine
     engine = LLMEngine(MODEL_NAME)
     yield
+    # Server stopping: shut the worker process down so the model's GPU memory
+    # is released even when uvicorn isn't killed from a terminal.
+    engine.shutdown()
 
 
 app = FastAPI(title="nano-vllm", lifespan=lifespan)

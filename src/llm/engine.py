@@ -25,11 +25,12 @@ class LLMEngine:
         # The scheduler is the only caller of the executor. It re-forms the
         # batch from all unfinished sequences after every single-token step,
         # so new requests join generation mid-flight (continuous batching).
+        self.stop_event = threading.Event()
         self.scheduler = threading.Thread(target=self._schedule_loop, daemon=True)
         self.scheduler.start()
 
     def _schedule_loop(self) -> None:
-        while True:
+        while not self.stop_event.is_set():
             batch = self.workload_manager.get_next_batch()
             if not batch:
                 time.sleep(0.01)
@@ -46,6 +47,13 @@ class LLMEngine:
                     logger.info(
                         "finished %s: %d token(s)", sequence.request_id[:8], sequence.token_count
                     )
+
+    def shutdown(self) -> None:
+        # Stop scheduling first so nothing races the worker's exit, then tell
+        # the worker to quit — its process death releases the GPU memory.
+        self.stop_event.set()
+        self.scheduler.join(timeout=10)  # finishes at most one in-flight step
+        self.model_executor.shutdown()
 
     def generate(
         self, prompts: list[str], temperature: float = 1.0, max_tokens: int = 16

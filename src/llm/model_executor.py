@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 
 class ModelExecutor:
     def __init__(self):
-        self.task_queue: mp.Queue[list[Sequence]] = mp.Queue()
+        # None on the task queue is the shutdown sentinel.
+        self.task_queue: mp.Queue[list[Sequence] | None] = mp.Queue()
         self.result_queue: mp.Queue[list[Sequence]] = mp.Queue()
         self.worker_process: mp.Process | None = None
 
@@ -26,3 +27,16 @@ class ModelExecutor:
     def execute_batch(self, batch: list[Sequence]) -> list[Sequence]:
         self.task_queue.put(batch)
         return self.result_queue.get()
+
+    def shutdown(self):
+        # The worker's process exit is what releases the model's GPU memory —
+        # the driver frees all of a process's allocations when it dies.
+        if self.worker_process is None:
+            return
+        self.task_queue.put(None)
+        self.worker_process.join(timeout=10)
+        if self.worker_process.is_alive():
+            self.worker_process.terminate()
+            self.worker_process.join()
+        self.worker_process = None
+        logger.info("worker stopped; model memory released")
