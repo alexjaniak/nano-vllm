@@ -130,7 +130,9 @@ def serve(
         typer.Option(help="Torch dtype (e.g. float16); 'auto' keeps the checkpoint's native precision."),
     ] = "auto",
     host: Annotated[str, typer.Option(help="Interface to bind.")] = "127.0.0.1",
-    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
+    # 8001 by default so vLLM can keep its default 8000 when both run for
+    # the head-to-head benchmark.
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8001,
 ) -> None:
     """Serve MODEL over an OpenAI-compatible HTTP API."""
     app.state.model, app.state.dtype = model, dtype

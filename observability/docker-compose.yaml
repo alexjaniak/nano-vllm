@@ -1,0 +1,35 @@
+# Monitoring stack: Prometheus scrapes both servers, Grafana graphs them on
+# one dashboard. The servers themselves run elsewhere, any way you like —
+# Prometheus just expects both on their default ports: nano-vllm on host
+# port 8001, vLLM on 8000.
+#
+#   docker compose up -d
+#
+# Grafana: http://localhost:3000 (no login), Prometheus: http://localhost:9090
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      # Docker Desktop provides host.docker.internal; this makes it work on
+      # plain Linux (the cloud GPU box) too.
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      # A localhost benchmark rig, not prod: skip the login entirely.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # Allow the dashboard's 1s refresh (Grafana's floor defaults to 5s).
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 1s

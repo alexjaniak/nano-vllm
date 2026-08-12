@@ -1,0 +1,10 @@
+# Load every dashboard JSON in /var/lib/grafana/dashboards (mounted from
+# observability/grafana/dashboards) — dashboards live in git, not clicks.
+apiVersion: 1
+
+providers:
+  - name: nano-vllm
+    folder: ""
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,16 @@
+# Both servers emit identically-named vllm:* metrics; the `job` label on
+# each scrape target is what tells their series apart on the dashboard.
+global:
+  scrape_interval: 1s # benchmark runs are short; the 15s default is too coarse
+
+scrape_configs:
+  - job_name: nano-vllm
+    static_configs:
+      # nano-vllm runs bare on the host (uv run python src/main.py);
+      # host.docker.internal resolves to the host from inside the container.
+      # Both servers listen on their defaults: nano-vllm 8001, vLLM 8000.
+      - targets: ["host.docker.internal:8001"]
+
+  - job_name: vllm
+    static_configs:
+      - targets: ["host.docker.internal:8000"]

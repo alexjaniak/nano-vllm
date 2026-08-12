@@ -52,7 +52,7 @@ cli = typer.Typer(add_completion=False)
 def main(
     url: Annotated[
         str, typer.Option(help="Base URL of the nano-vllm server.")
-    ] = "http://127.0.0.1:8000",
+    ] = "http://127.0.0.1:8001",
     streaming: Annotated[
         bool,
         typer.Option(help="Stream tokens as they generate; --no-streaming waits for the full completion."),
