@@ -5,6 +5,7 @@ import time
 import uuid
 from collections.abc import Iterator
 
+from .metrics import Metrics
 from .model_executor import ModelExecutor
 from .workload_manager import Sequence, WorkloadManager
 
@@ -16,6 +17,7 @@ class LLMEngine:
         self.model_name = model_name
         self.model_executor = ModelExecutor()
         self.workload_manager = WorkloadManager()
+        self.metrics = Metrics(model_name)
 
         # Per-streaming-request queues: the scheduler pushes token deltas in,
         # then the finished Sequence as the end-of-stream marker.
@@ -33,13 +35,35 @@ class LLMEngine:
     def __schedule_loop(self) -> None:
         while not self.stop_event.is_set():
             batch = self.workload_manager.get_next_batch()
+            self.metrics.set_queue_depths(
+                running=len(batch),
+                waiting=self.workload_manager.active_count() - len(batch),
+            )
             if not batch:
                 time.sleep(0.01)
                 continue
+            now = time.monotonic()
+            for sequence in batch:
+                if sequence.timing.scheduled is None:
+                    sequence.timing.scheduled = now
+                    self.metrics.observe_queue_time(now - sequence.timing.arrival)
+            step_tokens = 0  # tokens the model processed this iteration
             for sequence in self.model_executor.execute_batch(
                 batch
             ):  # blocking, so only good for 1 worker
+                now = time.monotonic()
                 delta = self.workload_manager.update_sequence(sequence)
+                # Each step samples exactly one token per sequence; a
+                # sequence's first step also processed its whole prompt.
+                previous_token_time = sequence.timing.last_token
+                sequence.timing.last_token = now
+                if previous_token_time is None:
+                    sequence.timing.first_token = now
+                    step_tokens += sequence.prompt_tokens
+                    self.metrics.observe_first_token(sequence, now)
+                else:
+                    step_tokens += 1
+                    self.metrics.observe_next_token(now - previous_token_time)
                 stream = self.streams.get(sequence.request_id)
                 if stream is not None:
                     if delta:
@@ -47,11 +71,13 @@ class LLMEngine:
                     if sequence.finished:
                         stream.put(sequence)  # end-of-stream marker
                 if sequence.finished:
+                    self.metrics.observe_finished(sequence, now)
                     logger.info(
                         "finished %s: %d token(s)",
                         sequence.request_id[:8],
                         sequence.token_count,
                     )
+            self.metrics.observe_iteration(step_tokens)
 
     def shutdown(self) -> None:
         # Stop scheduling first so nothing races the worker's exit, then tell

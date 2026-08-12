@@ -8,7 +8,8 @@ from typing import Annotated
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from llm import LLMEngine
 from llm.logging_config import setup_logging
@@ -46,6 +47,13 @@ class CompletionRequest:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+def metrics():
+    # Prometheus exposition, same path vLLM serves it on. The instruments
+    # live on the process-default registry (see llm/metrics.py).
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/v1/models")

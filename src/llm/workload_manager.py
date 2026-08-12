@@ -1,6 +1,18 @@
 import threading
+import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Timing:
+    # Lifecycle timestamps (monotonic clock), set by the engine and carried
+    # through the worker round-trip; the Prometheus metrics derive queue time,
+    # TTFT, inter-token latency, and the prefill/decode split from them.
+    arrival: float = field(default_factory=time.monotonic)
+    scheduled: float | None = None  # first time it entered a batch
+    first_token: float | None = None
+    last_token: float | None = None
 
 
 @dataclass
@@ -16,6 +28,7 @@ class Sequence:
     token_count: int = 0
     finished: bool = False
     finish_reason: str | None = None  # "stop" (EOS) or "length" (hit max_tokens)
+    timing: Timing = field(default_factory=Timing)
 
 
 class WorkloadManager:
@@ -58,6 +71,11 @@ class WorkloadManager:
                 return ""  # dropped mid-flight (client disconnected)
             self.sequences[sequence.request_id] = sequence
             return sequence.output[len(old.output) :]
+
+    def active_count(self) -> int:
+        # Unfinished sequences; those beyond max_batch_size are "waiting".
+        with self._lock:
+            return sum(not s.finished for s in self.sequences.values())
 
     def is_finished(self, request_id: str) -> bool:
         with self._lock:
