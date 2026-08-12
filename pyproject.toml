@@ -11,5 +11,6 @@ dependencies = [
     "fastapi>=0.141.1",
     "torch>=2.13.0",
     "transformers>=5.14.1",
+    "typer>=0.27.1",
     "uvicorn>=0.52.1",
 ]

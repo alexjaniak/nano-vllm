@@ -18,13 +18,15 @@ One `Sequence` dataclass flows through the whole pipeline; the worker fills in i
 
 ```bash
 uv sync
-cd src && uv run uvicorn main:app
+uv run src/main.py
 ```
+
+Every runtime option is a CLI flag — see `uv run src/main.py --help`.
 
 Then either use the interactive client:
 
 ```bash
-python src/client.py
+uv run src/client.py
 ```
 
 or hit the OpenAI-compatible API directly:
@@ -33,12 +35,12 @@ or hit the OpenAI-compatible API directly:
 # completions — `prompt` also takes a list, and the batch shares forward passes
 curl -X POST http://127.0.0.1:8000/v1/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model": "facebook/opt-125m", "prompt": "Once upon a time", "max_tokens": 50}'
+  -d '{"model": "Qwen/Qwen3-0.6B", "prompt": "Once upon a time", "max_tokens": 50}'
 
 # token streaming (SSE): add "stream": true
 curl -N -X POST http://127.0.0.1:8000/v1/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model": "facebook/opt-125m", "prompt": "Once upon a time", "max_tokens": 50, "stream": true}'
+  -d '{"model": "Qwen/Qwen3-0.6B", "prompt": "Once upon a time", "max_tokens": 50, "stream": true}'
 ```
 
 The client streams by default; pass `--no-streaming` to wait for the full completion.
@@ -47,24 +49,11 @@ Speaking the OpenAI protocol means any standard load-test harness works out of t
 
 ```bash
 vllm bench serve --backend openai --base-url http://127.0.0.1:8000 \
-  --model facebook/opt-125m --dataset-name sharegpt --num-prompts 200 --request-rate 4
+  --model Qwen/Qwen3-0.6B --dataset-name sharegpt --num-prompts 200 --request-rate 4
 ```
 
-Default model is `facebook/opt-125m` (downloads on first run), on CUDA/MPS/CPU — whatever is available. Pick a different model with the `NANO_VLLM_MODEL` env var:
+Default model is `Qwen/Qwen3-0.6B` (downloads on first run), on CUDA/MPS/CPU — whatever is available. Pick a different model with `--model`:
 
 ```bash
-NANO_VLLM_MODEL=Qwen/Qwen2.5-1.5B-Instruct uv run uvicorn main:app
+uv run src/main.py --model Qwen/Qwen2.5-1.5B-Instruct
 ```
-
-Models load in their checkpoint's native precision (fp16/bf16), so a ~1.5B model fits comfortably in 6 GB of VRAM.
-
-## Roadmap
-
-- [x] Model worker in a separate process
-- [x] Batched generation with request correlation
-- [x] Token streaming (SSE)
-- [x] Continuous batching (token-level scheduler; new requests join mid-generation)
-- [x] KV cache (per-sequence; prefill once, then one token per forward pass)
-- [x] OpenAI-compatible API (`/v1/completions`, `/v1/models`)
-- [ ] Paged attention (batch ragged caches back together)
-- [ ] Multi-model serving

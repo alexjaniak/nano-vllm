@@ -12,30 +12,33 @@ logger = logging.getLogger(__name__)
 
 
 class LLMEngine:
-    def __init__(self, model_name: str = "facebook/opt-125m"):
+    def __init__(self, model_name: str, dtype: str = "auto"):
         self.model_name = model_name
         self.model_executor = ModelExecutor()
         self.workload_manager = WorkloadManager()
+
         # Per-streaming-request queues: the scheduler pushes token deltas in,
         # then the finished Sequence as the end-of-stream marker.
         self.streams: dict[str, queue.Queue[str | Sequence]] = {}
 
-        self.model_executor.setup_worker(model_name)
+        self.model_executor.setup_worker(model_name, dtype)
 
         # The scheduler is the only caller of the executor. It re-forms the
         # batch from all unfinished sequences after every single-token step,
         # so new requests join generation mid-flight (continuous batching).
         self.stop_event = threading.Event()
-        self.scheduler = threading.Thread(target=self._schedule_loop, daemon=True)
+        self.scheduler = threading.Thread(target=self.__schedule_loop, daemon=True)
         self.scheduler.start()
 
-    def _schedule_loop(self) -> None:
+    def __schedule_loop(self) -> None:
         while not self.stop_event.is_set():
             batch = self.workload_manager.get_next_batch()
             if not batch:
                 time.sleep(0.01)
                 continue
-            for sequence in self.model_executor.execute_batch(batch):
+            for sequence in self.model_executor.execute_batch(
+                batch
+            ):  # blocking, so only good for 1 worker
                 delta = self.workload_manager.update_sequence(sequence)
                 stream = self.streams.get(sequence.request_id)
                 if stream is not None:
@@ -45,7 +48,9 @@ class LLMEngine:
                         stream.put(sequence)  # end-of-stream marker
                 if sequence.finished:
                     logger.info(
-                        "finished %s: %d token(s)", sequence.request_id[:8], sequence.token_count
+                        "finished %s: %d token(s)",
+                        sequence.request_id[:8],
+                        sequence.token_count,
                     )
 
     def shutdown(self) -> None:
@@ -64,7 +69,9 @@ class LLMEngine:
             for prompt in prompts
         ]
         logger.info("queued %d request(s)", len(request_ids))
-        while not all(self.workload_manager.is_finished(request_id) for request_id in request_ids):
+        while not all(
+            self.workload_manager.is_finished(request_id) for request_id in request_ids
+        ):
             time.sleep(0.01)
         # Finished sequences in the same order the prompts came in.
         sequences: list[Sequence] = []

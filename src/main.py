@@ -1,10 +1,12 @@
 import json
-import os
 import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Annotated
 
+import typer
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -14,20 +16,16 @@ from llm.workload_manager import Sequence
 
 setup_logging()
 
-MODEL_NAME = os.environ.get("NANO_VLLM_MODEL", "facebook/opt-125m")
-
-engine: LLMEngine | None = None
-
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(app: FastAPI):
     # Load the model on server startup, not import (imports must stay cheap).
-    global engine
-    engine = LLMEngine(MODEL_NAME)
+    # The CLI (bottom of this file) put model and dtype on app.state.
+    app.state.engine = LLMEngine(app.state.model, app.state.dtype)
     yield
     # Server stopping: shut the worker process down so the model's GPU memory
     # is released even when uvicorn isn't killed from a terminal.
-    engine.shutdown()
+    app.state.engine.shutdown()
 
 
 app = FastAPI(title="nano-vllm", lifespan=lifespan)
@@ -55,7 +53,7 @@ def models():
     return {
         "object": "list",
         "data": [
-            {"id": MODEL_NAME, "object": "model", "created": started_at, "owned_by": "nano-vllm"}
+            {"id": app.state.model, "object": "model", "created": started_at, "owned_by": "nano-vllm"}
         ],
     }
 
@@ -66,14 +64,13 @@ def completion_choice(index: int, text: str, finish_reason: str | None) -> dict:
 
 @app.post("/v1/completions")
 def completions(request: CompletionRequest):
-    assert engine is not None
-    llm = engine  # bind locally: the assert's narrowing doesn't reach the closure
-    if request.model != MODEL_NAME:
+    llm: LLMEngine = app.state.engine
+    if request.model != app.state.model:
         raise HTTPException(status_code=404, detail=f"model {request.model!r} does not exist")
 
     completion_id = f"cmpl-{uuid.uuid4().hex}"
     base = {"id": completion_id, "object": "text_completion", "created": int(time.time()),
-            "model": MODEL_NAME}
+            "model": app.state.model}
     prompts = [request.prompt] if isinstance(request.prompt, str) else request.prompt
 
     if request.stream:
@@ -106,3 +103,31 @@ def completions(request: CompletionRequest):
             "total_tokens": prompt_tokens + completion_tokens,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# CLI — every runtime option lives here; `--help` lists them all.
+# ---------------------------------------------------------------------------
+
+cli = typer.Typer(add_completion=False)
+
+
+@cli.command()
+def serve(
+    model: Annotated[
+        str, typer.Option(help="Hugging Face model to serve.")
+    ] = "Qwen/Qwen3-0.6B",
+    dtype: Annotated[
+        str,
+        typer.Option(help="Torch dtype (e.g. float16); 'auto' keeps the checkpoint's native precision."),
+    ] = "auto",
+    host: Annotated[str, typer.Option(help="Interface to bind.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
+) -> None:
+    """Serve MODEL over an OpenAI-compatible HTTP API."""
+    app.state.model, app.state.dtype = model, dtype
+    uvicorn.run(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    cli()

@@ -24,9 +24,9 @@ def get_device() -> str:
 
 
 class ModelWorker:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, dtype: str = "auto"):
         self.device = get_device()
-        self.model, self.tokenizer = ModelManager().load_model(model_name)
+        self.model, self.tokenizer = ModelManager().load_model(model_name, dtype)
         self.model = self.model.to(self.device)
         # Per-sequence KV cache: request_id -> (cache, next input token id).
         # The cache holds every past position's attention keys/values, so a
@@ -46,9 +46,9 @@ class ModelWorker:
             if state is None:
                 # Prefill: process the whole prompt once, caching every
                 # position's K/V along the way.
-                input_ids = self.tokenizer(sequence.prompt, return_tensors="pt").input_ids.to(
-                    self.device
-                )
+                input_ids = self.tokenizer(
+                    sequence.prompt, return_tensors="pt"
+                ).input_ids.to(self.device)
                 sequence.prompt_tokens = input_ids.shape[1]
                 cache = DynamicCache()
             else:
@@ -58,7 +58,9 @@ class ModelWorker:
                 input_ids = torch.tensor([[last_token]], device=self.device)
 
             with torch.no_grad():
-                output = self.model(input_ids=input_ids, past_key_values=cache, use_cache=True)
+                output = self.model(
+                    input_ids=input_ids, past_key_values=cache, use_cache=True
+                )
 
             # Temperature sampling: scale the logits, then draw from the
             # distribution. Higher temperature flattens it (more random);
@@ -81,17 +83,23 @@ class ModelWorker:
                     sequence.finish_reason = "length"
                     self.states.pop(sequence.request_id, None)
                 else:
-                    self.states[sequence.request_id] = (output.past_key_values, token_id)
+                    self.states[sequence.request_id] = (
+                        output.past_key_values,
+                        token_id,
+                    )
 
         # A sequence that stops appearing in batches was dropped mid-flight
         # (client disconnect) — free its cache.
         batch_ids = {sequence.request_id for sequence in batch}
-        self.states = {rid: state for rid, state in self.states.items() if rid in batch_ids}
+        self.states = {
+            rid: state for rid, state in self.states.items() if rid in batch_ids
+        }
         return batch
 
     @staticmethod
     def run(
         model_name: str,
+        dtype: str,
         task_queue: mp.Queue[list[Sequence] | None],
         result_queue: mp.Queue[list[Sequence]],
     ):
@@ -99,7 +107,7 @@ class ModelWorker:
         # the shutdown sentinel (None) arrives. Exiting the process is what
         # frees the model's GPU memory.
         setup_logging()
-        worker = ModelWorker(model_name)
+        worker = ModelWorker(model_name, dtype)
         while (batch := task_queue.get()) is not None:
             result_queue.put(worker.forward_step(batch))
         logger.info("worker exiting")

@@ -14,12 +14,12 @@ class ModelExecutor:
         self.result_queue: mp.Queue[list[Sequence]] = mp.Queue()
         self.worker_process: mp.Process | None = None
 
-    def setup_worker(self, model_name: str):
+    def setup_worker(self, model_name: str, dtype: str = "auto"):
         # The model runs in its own process so a slow forward pass never
         # blocks the server's event loop; queues are the only link.
         self.worker_process = mp.Process(
             target=ModelWorker.run,
-            args=(model_name, self.task_queue, self.result_queue),
+            args=(model_name, dtype, self.task_queue, self.result_queue),
         )
         self.worker_process.start()
         logger.info("worker process started (pid=%s)", self.worker_process.pid)

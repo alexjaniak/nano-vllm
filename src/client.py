@@ -1,11 +1,10 @@
-"""Interactive client: type a prompt, stream the completion back.
+"""Interactive client: type a prompt, stream the completion back."""
 
-Usage: python client.py [--no-streaming]
-"""
-
-import argparse
 import json
 import urllib.request
+from typing import Annotated
+
+import typer
 
 def get_model(base_url: str) -> str:
     with urllib.request.urlopen(f"{base_url}/v1/models") as response:
@@ -46,29 +45,27 @@ def ask_streaming(base_url: str, model: str, prompt: str, temperature: float, ma
     print()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Interactive nano-vllm client")
-    parser.add_argument("--url", default="http://127.0.0.1:8000")
-    parser.add_argument(
-        "--no-streaming",
-        action="store_true",
-        help="wait for the full completion instead of streaming tokens",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.7,
-        help="sampling randomness; 0 for greedy decoding",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=100,
-        help="cap on generated tokens per completion",
-    )
-    args = parser.parse_args()
+cli = typer.Typer(add_completion=False)
 
-    model = get_model(args.url)
+
+@cli.command()
+def main(
+    url: Annotated[
+        str, typer.Option(help="Base URL of the nano-vllm server.")
+    ] = "http://127.0.0.1:8000",
+    streaming: Annotated[
+        bool,
+        typer.Option(help="Stream tokens as they generate; --no-streaming waits for the full completion."),
+    ] = True,
+    temperature: Annotated[
+        float, typer.Option(help="Sampling randomness; 0 for greedy decoding.")
+    ] = 0.7,
+    max_tokens: Annotated[
+        int, typer.Option(help="Cap on generated tokens per completion.")
+    ] = 100,
+) -> None:
+    """Interactive nano-vllm client: type a prompt, get the completion back."""
+    model = get_model(url)
     print(f"model: {model}")
     while True:
         try:
@@ -77,11 +74,11 @@ def main() -> None:
             break
         if not prompt:
             break
-        if args.no_streaming:
-            ask(args.url, model, prompt, args.temperature, args.max_tokens)
+        if streaming:
+            ask_streaming(url, model, prompt, temperature, max_tokens)
         else:
-            ask_streaming(args.url, model, prompt, args.temperature, args.max_tokens)
+            ask(url, model, prompt, temperature, max_tokens)
 
 
 if __name__ == "__main__":
-    main()
+    cli()

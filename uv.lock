@@ -392,6 +392,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "torch" },
     { name = "transformers" },
+    { name = "typer" },
     { name = "uvicorn" },
 ]
 
@@ -400,6 +401,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "torch", specifier = ">=2.13.0" },
     { name = "transformers", specifier = ">=5.14.1" },
+    { name = "typer", specifier = ">=0.27.1" },
     { name = "uvicorn", specifier = ">=0.52.1" },
 ]
 
