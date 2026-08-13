@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import multiprocessing as mp
+from dataclasses import dataclass, field
 from multiprocessing.synchronize import Event
 from typing import Any
 
@@ -13,6 +14,19 @@ from .model_manager import ModelManager
 from .workload_manager import SamplingParams, Sequence
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DecodeState:
+    # Everything the worker keeps between steps for one sequence. It lives
+    # here rather than on Sequence because the KV cache tensors are far too
+    # big to ship through the mp queues every step.
+    cache: Any
+    last_token: int = -1  # fed as the next step's input; unset during prefill
+    token_ids: list[int] = field(default_factory=list)  # generated so far
+    # Cursors into token_ids for incremental detokenization (see _detokenize).
+    prefix_offset: int = 0
+    read_offset: int = 0
 
 
 def get_device() -> str:
@@ -29,13 +43,11 @@ class ModelWorker:
         self.device = get_device()
         self.model, self.tokenizer = ModelManager().load_model(model_name, dtype)
         self.model = self.model.to(self.device)
-        # Per-sequence KV cache: request_id -> (cache, next input token id).
-        # The cache holds every past position's attention keys/values, so a
-        # decode step only computes attention for the one new token instead
-        # of re-processing the whole text — O(n) generation instead of O(n^2).
-        # It lives here (not on Sequence) because cache tensors are far too
-        # big to ship through the mp queues every step.
-        self.states: dict[str, tuple[Any, int]] = {}
+        # Per-sequence decode state, keyed by request id. Its KV cache holds
+        # every past position's attention keys/values, so a decode step only
+        # computes attention for the one new token instead of re-processing
+        # the whole text — O(n) generation instead of O(n^2).
+        self.states: dict[str, DecodeState] = {}
         # Per-sequence RNG for seeded requests, created once at prefill —
         # re-seeding every step would draw the same quantile forever.
         self.generators: dict[str, torch.Generator] = {}
@@ -73,7 +85,8 @@ class ModelWorker:
                     sequence.prompt, return_tensors="pt"
                 ).input_ids.to(self.device)
                 sequence.prompt_tokens = input_ids.shape[1]
-                cache = DynamicCache()
+                state = DecodeState(cache=DynamicCache())
+                self.states[sequence.request_id] = state
                 if params.seed is not None:
                     # CPU generator on purpose — see _sample.
                     self.generators[sequence.request_id] = (
@@ -82,12 +95,11 @@ class ModelWorker:
             else:
                 # Decode: feed only the previous token; everything before it
                 # is already in the cache.
-                cache, last_token = state
-                input_ids = torch.tensor([[last_token]], device=self.device)
+                input_ids = torch.tensor([[state.last_token]], device=self.device)
 
             with torch.no_grad():
                 output = self.model(
-                    input_ids=input_ids, past_key_values=cache, use_cache=True
+                    input_ids=input_ids, past_key_values=state.cache, use_cache=True
                 )
 
             token_id = self._sample(
@@ -98,7 +110,8 @@ class ModelWorker:
                 sequence.finished = True
                 sequence.finish_reason = "stop"
             else:
-                sequence.output += str(self.tokenizer.decode([token_id]))
+                state.token_ids.append(token_id)
+                sequence.output += self._detokenize(state)
                 # Stop strings: search the whole accumulated output — a stop
                 # string can span token boundaries ("</s>" arriving as "</" +
                 # "s>"). The match onward is cut from the output, like vLLM.
@@ -115,10 +128,8 @@ class ModelWorker:
                     sequence.finished = True
                     sequence.finish_reason = "length"
                 else:
-                    self.states[sequence.request_id] = (
-                        output.past_key_values,
-                        token_id,
-                    )
+                    state.cache = output.past_key_values
+                    state.last_token = token_id
 
         # Free cache + generator of anything no longer running: finished this
         # step, or dropped mid-flight (stopped appearing in batches).
@@ -130,6 +141,33 @@ class ModelWorker:
             rid: gen for rid, gen in self.generators.items() if rid in active_ids
         }
         return batch
+
+    def _detokenize(self, state: DecodeState) -> str:
+        # Incremental detokenization: the text the newest token adds.
+        #
+        # Decoding one id at a time is wrong. A BPE token can be half a UTF-8
+        # character, so decode([id]) returns U+FFFD for anything non-ASCII,
+        # and tokenizers strip the leading-space marker off an isolated token.
+        # Instead decode a short suffix twice — with and without the newest
+        # token — and take the difference. Both decodes start at the same
+        # offset, so a partial character at the front renders identically in
+        # each and cancels out in the slice. The cursors keep the decoded
+        # window a couple of tokens wide, so this stays O(1) per step.
+        ids = state.token_ids
+        prefix = self.tokenizer.decode(
+            ids[state.prefix_offset : state.read_offset], skip_special_tokens=True
+        )
+        whole = self.tokenizer.decode(
+            ids[state.prefix_offset :], skip_special_tokens=True
+        )
+        # A trailing U+FFFD means the newest token opened a multi-byte
+        # character that hasn't finished arriving. Hold the text back and let
+        # the next token complete it, rather than emitting a replacement char.
+        if len(whole) <= len(prefix) or whole.endswith("�"):
+            return ""
+        state.prefix_offset = state.read_offset
+        state.read_offset = len(ids)
+        return whole[len(prefix) :]
 
     def _sample(
         self,
