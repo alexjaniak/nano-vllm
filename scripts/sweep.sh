@@ -28,6 +28,9 @@ GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.90}"
 DATASET="${DATASET:-random}"
 INPUT_LEN="${INPUT_LEN:-512}"
 OUTPUT_LEN="${OUTPUT_LEN:-128}"
+# Vast's instance portal can already own :8000; override these to dodge it.
+VLLM_PORT="${VLLM_PORT:-8000}"
+NANO_PORT="${NANO_PORT:-8001}"
 GAP="${GAP:-45}"          # quiet seconds around every measured run
 SWAP_GAP="${SWAP_GAP:-90}" # longer gap when swapping engines
 
@@ -60,9 +63,9 @@ kill_stray_vllm() {
 }
 
 start_vllm() {
-  log "starting vLLM on :8000"
+  log "starting vLLM on :$VLLM_PORT"
   nohup vllm serve "$MODEL" \
-    --host 127.0.0.1 --port 8000 \
+    --host 127.0.0.1 --port "$VLLM_PORT" \
     --max-num-seqs "$MAX_NUM_SEQS" \
     --max-model-len "$MAX_MODEL_LEN" \
     --gpu-memory-utilization "$GPU_MEM_UTIL" \
@@ -71,11 +74,11 @@ start_vllm() {
 }
 
 start_nano() {
-  log "starting nano-vllm on :8001"
+  log "starting nano-vllm on :$NANO_PORT"
   nohup uv run src/main.py \
     --model "$MODEL" \
     --max-num-seqs "$MAX_NUM_SEQS" \
-    --host 127.0.0.1 --port 8001 \
+    --host 127.0.0.1 --port "$NANO_PORT" \
     > "$OUT/nano-vllm.server.log" 2>&1 &
   echo $! > "$OUT/server.pid"
 }
@@ -162,9 +165,9 @@ SWEEP_START=$(now_ms)
 log "run $RUN_ID | model=$MODEL max_num_seqs=$MAX_NUM_SEQS prompts=$NUM_PROMPTS"
 kill_stray_vllm
 
-start_vllm;  wait_healthy 8000; sweep vllm 8000;      stop_server
+start_vllm;  wait_healthy "$VLLM_PORT"; sweep vllm "$VLLM_PORT";           stop_server
 log "engine swap: quiet $SWAP_GAP s"; sleep "$SWAP_GAP"
-start_nano;  wait_healthy 8001; sweep nano-vllm 8001; stop_server
+start_nano;  wait_healthy "$NANO_PORT"; sweep nano-vllm "$NANO_PORT"; stop_server
 
 SWEEP_END=$(now_ms)
 record all full-sweep - "$SWEEP_START" "$SWEEP_END"

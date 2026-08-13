@@ -4,13 +4,20 @@ global:
   scrape_interval: 1s # benchmark runs are short; the 15s default is too coarse
 
 scrape_configs:
+  # host.docker.internal resolves to the host from inside the container (it
+  # works under Colima too, via the host-gateway entry in the compose file).
+  #
+  # Ports are 18000/18001 rather than the servers' defaults because the
+  # benchmark runs on a rented box reached through an SSH tunnel, and Vast's
+  # instance-portal Caddy already owns :8000 there. The tunnel maps
+  # localhost:1800x here to localhost:1800x on the box, and the sweep script
+  # is pointed at the same pair via VLLM_PORT / NANO_PORT.
+  #
+  # Serving locally instead? Use 8001 (nano-vllm) and 8000 (vLLM).
   - job_name: nano-vllm
     static_configs:
-      # nano-vllm runs bare on the host (uv run python src/main.py);
-      # host.docker.internal resolves to the host from inside the container.
-      # Both servers listen on their defaults: nano-vllm 8001, vLLM 8000.
-      - targets: ["host.docker.internal:8001"]
+      - targets: ["host.docker.internal:18001"]
 
   - job_name: vllm
     static_configs:
-      - targets: ["host.docker.internal:8000"]
+      - targets: ["host.docker.internal:18000"]
