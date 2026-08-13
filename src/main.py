@@ -4,6 +4,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
 
+import anyio
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -21,6 +22,12 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # The endpoints below are sync `def`, so Starlette runs each in anyio's
+    # thread pool — capped at 40 threads by default. Under a load test that
+    # cap becomes the bottleneck instead of the engine: excess requests queue
+    # invisibly at the ASGI layer, so num_requests_waiting under-reports and
+    # hides the head-of-line blocking it exists to show.
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 512
     # Load the model on server startup, not import (imports must stay cheap).
     # The CLI (bottom of this file) put the EngineArgs on app.state.
     app.state.engine = LLMEngine(app.state.engine_args)
