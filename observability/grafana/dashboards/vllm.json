@@ -1493,9 +1493,13 @@
       },
       {
         "current": {
-          "selected": false,
-          "text": "/share/datasets/public_models/Meta-Llama-3-8B-Instruct",
-          "value": "/share/datasets/public_models/Meta-Llama-3-8B-Instruct"
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
         },
         "datasource": {
           "type": "prometheus",
@@ -1503,16 +1507,16 @@
         },
         "definition": "label_values(model_name)",
         "hide": 0,
-        "includeAll": false,
+        "includeAll": true,
         "label": "model_name",
-        "multi": false,
+        "multi": true,
         "name": "model_name",
         "options": [],
         "query": {
-          "query": "label_values(model_name)",
+          "query": "label_values(vllm:num_requests_running, model_name)",
           "refId": "StandardVariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 0,
