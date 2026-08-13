@@ -37,6 +37,9 @@ htmlcov/
 *.swp
 *.swo
 
+# Claude Code
+.claude/
+
 # Misc
 .DS_Store
 Thumbs.db
