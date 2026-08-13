@@ -1,0 +1,164 @@
+warning: `VIRTUAL_ENV=/venv/main` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+Using CPython 3.11.15
+Creating virtual environment at: .venv
+Installed 61 packages in 2.16s
+INFO:     Started server process [3570]
+INFO:     Waiting for application startup.
+2026-08-13 01:59:35,730 [INFO] MainProcess llm.model_executor: worker process started (pid=3641)
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:18001 (Press CTRL+C to quit)
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-08-13 01:59:36,055 [WARNING] Process-1 huggingface_hub.utils._http: Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+INFO:     127.0.0.1:52282 - "GET /health HTTP/1.1" 200 OK
+Loading weights:   0%|          | 0/399 [00:00<?, ?it/s]INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+Loading weights: 100%|██████████| 399/399 [00:00<00:00, 7401.55it/s]
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 01:59:41,071 [INFO] Process-1 llm.model_worker: loaded Qwen/Qwen3-8B on cuda
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59692 - "POST /tokenize HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59706 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59706 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59706 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59712 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59714 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59722 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59728 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59740 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59744 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59752 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59762 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59776 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59782 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59790 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59794 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59800 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59816 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59826 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 01:59:55,350 [INFO] MainProcess llm.engine: finished b264840a: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 01:59:55,555 [INFO] MainProcess llm.engine: finished ab42cf41: 32 token(s)
+2026-08-13 01:59:55,555 [INFO] MainProcess llm.engine: finished 0a4aa684: 32 token(s)
+2026-08-13 01:59:55,555 [INFO] MainProcess llm.engine: finished ab0bf90a: 32 token(s)
+2026-08-13 01:59:55,555 [INFO] MainProcess llm.engine: finished ffe93c09: 32 token(s)
+2026-08-13 01:59:55,555 [INFO] MainProcess llm.engine: finished f2e2e709: 32 token(s)
+2026-08-13 01:59:55,555 [INFO] MainProcess llm.engine: finished 7755cd12: 32 token(s)
+2026-08-13 01:59:55,901 [INFO] MainProcess llm.engine: finished d9bee941: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:01,188 [INFO] MainProcess llm.engine: finished 0bcb51aa: 32 token(s)
+2026-08-13 02:00:01,341 [INFO] MainProcess llm.engine: finished fedcee42: 32 token(s)
+2026-08-13 02:00:01,342 [INFO] MainProcess llm.engine: finished 0388311b: 32 token(s)
+2026-08-13 02:00:01,342 [INFO] MainProcess llm.engine: finished fa027b18: 32 token(s)
+2026-08-13 02:00:01,342 [INFO] MainProcess llm.engine: finished 0a5b3b0f: 32 token(s)
+2026-08-13 02:00:01,342 [INFO] MainProcess llm.engine: finished d4767356: 32 token(s)
+2026-08-13 02:00:01,342 [INFO] MainProcess llm.engine: finished 038c3571: 32 token(s)
+2026-08-13 02:00:01,365 [INFO] MainProcess llm.engine: finished 73e96309: 32 token(s)
+INFO:     127.0.0.1:59762 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59800 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57464 - "POST /tokenize HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57470 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57470 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57470 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57482 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57490 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57504 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57518 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57524 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57538 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35094 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35106 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35116 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35118 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35120 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35134 - "POST /v1/completions HTTP/1.1" 200 OK
+2026-08-13 02:00:26,294 [INFO] MainProcess llm.engine: finished b5a82f9c: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57470 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35142 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35148 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35162 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35164 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35172 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35180 - "POST /v1/completions HTTP/1.1" 200 OK
+2026-08-13 02:00:28,254 [INFO] MainProcess llm.engine: finished 4ddd2178: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:28,985 [INFO] MainProcess llm.engine: finished 926fa122: 32 token(s)
+2026-08-13 02:00:29,366 [INFO] MainProcess llm.engine: finished 2a1a272d: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:29,569 [INFO] MainProcess llm.engine: finished 82a888f5: 32 token(s)
+2026-08-13 02:00:29,949 [INFO] MainProcess llm.engine: finished 61c327a8: 32 token(s)
+2026-08-13 02:00:30,152 [INFO] MainProcess llm.engine: finished 8161582f: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:30,707 [INFO] MainProcess llm.engine: finished 30a5f4e3: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:31,616 [INFO] MainProcess llm.engine: finished 59867042: 8 token(s)
+2026-08-13 02:00:32,173 [INFO] MainProcess llm.engine: finished 3f950382: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:34,212 [INFO] MainProcess llm.engine: finished 6b0dee09: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:35,002 [INFO] MainProcess llm.engine: finished 74af8ab2: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:35,411 [INFO] MainProcess llm.engine: finished 8484da77: 32 token(s)
+2026-08-13 02:00:35,578 [INFO] MainProcess llm.engine: finished 89fbe5dd: 32 token(s)
+2026-08-13 02:00:35,865 [INFO] MainProcess llm.engine: finished aa825130: 32 token(s)
+2026-08-13 02:00:36,337 [INFO] MainProcess llm.engine: finished c883da94: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:36,807 [INFO] MainProcess llm.engine: finished 16e02600: 32 token(s)
+2026-08-13 02:00:37,023 [INFO] MainProcess llm.engine: finished 549c3fc4: 32 token(s)
+INFO:     127.0.0.1:52280 - "GET /metrics HTTP/1.1" 200 OK
+2026-08-13 02:00:37,553 [INFO] MainProcess llm.engine: finished 37bcdd33: 32 token(s)
+2026-08-13 02:00:37,651 [INFO] MainProcess llm.engine: finished c772231a: 32 token(s)
+INFO:     127.0.0.1:35116 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35118 - "GET /metrics HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-08-13 02:00:38,127 [INFO] Process-1 llm.model_worker: worker exiting
+2026-08-13 02:00:38,331 [INFO] MainProcess llm.model_executor: worker stopped; model memory released
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3570]

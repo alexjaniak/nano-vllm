@@ -6,8 +6,8 @@
 adjacent rows, and emits Markdown — the table is meant to be pasted into a
 README or a post, not just read once in a terminal.
 
-    uv run scripts/report.py                 # newest run under results/
-    uv run scripts/report.py results/2026... # a specific one
+    uv run scripts/report.py                      # newest run it can find
+    uv run scripts/report.py experiments/<name>/sweep
 """
 
 from __future__ import annotations
@@ -29,6 +29,14 @@ ALIASES = {
     "e2e_p99": ("p99_e2el_ms",),
     "completed": ("completed", "num_prompts"),
 }
+
+
+def newest_run() -> Path | None:
+    """Newest run directory: a curated experiments/<name>/<phase> first, else
+    a raw results/<stamp> as sweep.sh writes it on the box."""
+    candidates = sorted(Path("experiments").glob("*/*/")) + sorted(Path("results").glob("*/"))
+    runs = [d for d in candidates if any(d.glob("*_rate*.json"))]
+    return runs[-1] if runs else None
 
 
 def pick(blob: dict, field: str) -> float | None:
@@ -61,12 +69,11 @@ def fmt(value: float | None, digits: int = 1) -> str:
 def main() -> int:
     if len(sys.argv) > 1:
         run_dir = Path(sys.argv[1])
+    elif (found := newest_run()) is not None:
+        run_dir = found
     else:
-        candidates = sorted(Path("results").glob("*/"), reverse=True)
-        if not candidates:
-            print("no results/ directories found", file=sys.stderr)
-            return 1
-        run_dir = candidates[0]
+        print("no run directories found", file=sys.stderr)
+        return 1
 
     runs = load(run_dir)
     if not runs:
