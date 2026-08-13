@@ -33,14 +33,20 @@ or hit the OpenAI-compatible API directly:
 
 ```bash
 # completions — `prompt` also takes a list, and the batch shares forward passes
-curl -X POST http://127.0.0.1:8000/v1/completions \
+curl -X POST http://127.0.0.1:8001/v1/completions \
   -H 'Content-Type: application/json' \
   -d '{"model": "Qwen/Qwen3-0.6B", "prompt": "Once upon a time", "max_tokens": 50}'
 
 # token streaming (SSE): add "stream": true
-curl -N -X POST http://127.0.0.1:8000/v1/completions \
+curl -N -X POST http://127.0.0.1:8001/v1/completions \
   -H 'Content-Type: application/json' \
   -d '{"model": "Qwen/Qwen3-0.6B", "prompt": "Once upon a time", "max_tokens": 50, "stream": true}'
+
+# sampling params, vLLM-style: top_p/top_k filtering, stop strings, seeded RNG
+curl -X POST http://127.0.0.1:8001/v1/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "Qwen/Qwen3-0.6B", "prompt": "Once upon a time", "max_tokens": 50,
+       "temperature": 0.8, "top_p": 0.9, "top_k": 40, "stop": ["."], "seed": 42}'
 ```
 
 The client streams by default; pass `--no-streaming` to wait for the full completion.
@@ -48,12 +54,12 @@ The client streams by default; pass `--no-streaming` to wait for the full comple
 Speaking the OpenAI protocol means any standard load-test harness works out of the box — benchmark head-to-head against real vLLM with its own tool:
 
 ```bash
-vllm bench serve --backend openai --base-url http://127.0.0.1:8000 \
+vllm bench serve --backend openai --base-url http://127.0.0.1:8001 \
   --model Qwen/Qwen3-0.6B --dataset-name sharegpt --num-prompts 200 --request-rate 4
 ```
 
-Default model is `Qwen/Qwen3-0.6B` (downloads on first run), on CUDA/MPS/CPU — whatever is available. Pick a different model with `--model`:
+Default model is `Qwen/Qwen3-0.6B` (downloads on first run), on CUDA/MPS/CPU — whatever is available. Pick a different model with `--model`, and cap the per-step batch with `--max-num-seqs` (vLLM's flag name):
 
 ```bash
-uv run src/main.py --model Qwen/Qwen2.5-1.5B-Instruct
+uv run src/main.py --model Qwen/Qwen2.5-1.5B-Instruct --max-num-seqs 16
 ```

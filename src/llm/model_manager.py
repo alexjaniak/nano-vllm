@@ -10,7 +10,7 @@ class ModelManager:
     # The model is Any: transformers 5 types generate() for the `ty` checker,
     # which pyright cannot bind, so no model annotation type-checks.
     def load_model(
-        self, model_name: str, dtype_name: str = "auto"
+        self, model_name: str, dtype_name: str
     ) -> tuple[Any, PreTrainedTokenizerBase]:
         # "auto" loads the checkpoint's native precision (fp16/bf16 for most
         # modern models) instead of upcasting to fp32 — half the memory.

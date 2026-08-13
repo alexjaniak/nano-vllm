@@ -12,14 +12,15 @@ class ModelExecutor:
         # None on the task queue is the shutdown sentinel.
         self.task_queue: mp.Queue[list[Sequence] | None] = mp.Queue()
         self.result_queue: mp.Queue[list[Sequence]] = mp.Queue()
+        self.ready_event = mp.Event()  # set by the worker once the model is loaded
         self.worker_process: mp.Process | None = None
 
-    def setup_worker(self, model_name: str, dtype: str = "auto"):
+    def setup_worker(self, model_name: str, dtype: str):
         # The model runs in its own process so a slow forward pass never
         # blocks the server's event loop; queues are the only link.
         self.worker_process = mp.Process(
             target=ModelWorker.run,
-            args=(model_name, dtype, self.task_queue, self.result_queue),
+            args=(model_name, dtype, self.task_queue, self.result_queue, self.ready_event),
         )
         self.worker_process.start()
         logger.info("worker process started (pid=%s)", self.worker_process.pid)
@@ -40,3 +41,9 @@ class ModelExecutor:
             self.worker_process.join()
         self.worker_process = None
         logger.info("worker stopped; model memory released")
+
+    def is_alive(self) -> bool:
+        return self.worker_process is not None and self.worker_process.is_alive()
+
+    def is_ready(self) -> bool:
+        return self.is_alive() and self.ready_event.is_set()

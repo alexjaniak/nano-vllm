@@ -6,19 +6,19 @@ from typing import Annotated
 
 import typer
 
+# Shares the server's sampling defaults (torch-free import) so the two
+# sides can't drift apart.
+from llm import SamplingParams
+
+_DEFAULTS = SamplingParams()
+
+
 def get_model(base_url: str) -> str:
     with urllib.request.urlopen(f"{base_url}/v1/models") as response:
         return json.load(response)["data"][0]["id"]
 
 
-def complete(base_url: str, model: str, prompt: str, temperature: float, max_tokens: int, stream: bool):
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": stream,
-    }
+def complete(base_url: str, payload: dict):
     request = urllib.request.Request(
         f"{base_url}/v1/completions",
         data=json.dumps(payload).encode(),
@@ -27,13 +27,13 @@ def complete(base_url: str, model: str, prompt: str, temperature: float, max_tok
     return urllib.request.urlopen(request)
 
 
-def ask(base_url: str, model: str, prompt: str, temperature: float, max_tokens: int) -> None:
-    with complete(base_url, model, prompt, temperature, max_tokens, stream=False) as response:
+def ask(base_url: str, payload: dict) -> None:
+    with complete(base_url, payload | {"stream": False}) as response:
         print(json.loads(response.read())["choices"][0]["text"])
 
 
-def ask_streaming(base_url: str, model: str, prompt: str, temperature: float, max_tokens: int) -> None:
-    with complete(base_url, model, prompt, temperature, max_tokens, stream=True) as response:
+def ask_streaming(base_url: str, payload: dict) -> None:
+    with complete(base_url, payload | {"stream": True}) as response:
         for raw_line in response:
             line = raw_line.decode().strip()
             if not line.startswith("data: "):
@@ -59,14 +59,36 @@ def main(
     ] = True,
     temperature: Annotated[
         float, typer.Option(help="Sampling randomness; 0 for greedy decoding.")
-    ] = 0.7,
+    ] = _DEFAULTS.temperature,
+    top_p: Annotated[
+        float, typer.Option(help="Nucleus sampling probability mass; 1.0 disables.")
+    ] = _DEFAULTS.top_p,
+    top_k: Annotated[
+        int, typer.Option(help="Sample only among the k most likely tokens; -1 disables.")
+    ] = _DEFAULTS.top_k,
     max_tokens: Annotated[
         int, typer.Option(help="Cap on generated tokens per completion.")
-    ] = 100,
+    ] = _DEFAULTS.max_tokens,
+    stop: Annotated[
+        list[str] | None,
+        typer.Option(help="Stop string; repeat the flag for multiple."),
+    ] = None,
+    seed: Annotated[
+        int | None, typer.Option(help="RNG seed for reproducible sampling.")
+    ] = None,
 ) -> None:
     """Interactive nano-vllm client: type a prompt, get the completion back."""
     model = get_model(url)
     print(f"model: {model}")
+    payload = {
+        "model": model,
+        "temperature": temperature,
+        "top_p": top_p,
+        "top_k": top_k,
+        "max_tokens": max_tokens,
+        "stop": stop or None,  # typer gives [] when the flag is absent
+        "seed": seed,
+    }
     while True:
         try:
             prompt = input("prompt> ").strip()
@@ -75,9 +97,9 @@ def main(
         if not prompt:
             break
         if streaming:
-            ask_streaming(url, model, prompt, temperature, max_tokens)
+            ask_streaming(url, payload | {"prompt": prompt})
         else:
-            ask(url, model, prompt, temperature, max_tokens)
+            ask(url, payload | {"prompt": prompt})
 
 
 if __name__ == "__main__":

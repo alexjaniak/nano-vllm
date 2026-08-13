@@ -4,26 +4,36 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 from .metrics import Metrics
 from .model_executor import ModelExecutor
-from .workload_manager import Sequence, WorkloadManager
+from .workload_manager import SamplingParams, Sequence, WorkloadManager
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class EngineArgs:
+    # Server-level config, named after vLLM's EngineArgs. These field
+    # defaults are the single source of truth; the CLI reads them.
+    model: str = "Qwen/Qwen3-0.6B"
+    dtype: str = "auto"  # torch dtype name; "auto" keeps the checkpoint's native precision
+    max_num_seqs: int = 8  # max sequences per generation-step batch (vLLM's --max-num-seqs)
+
+
 class LLMEngine:
-    def __init__(self, model_name: str, dtype: str = "auto"):
-        self.model_name = model_name
+    def __init__(self, engine_args: EngineArgs):
+        self.model_name = engine_args.model
         self.model_executor = ModelExecutor()
-        self.workload_manager = WorkloadManager()
-        self.metrics = Metrics(model_name)
+        self.workload_manager = WorkloadManager(max_num_seqs=engine_args.max_num_seqs)
+        self.metrics = Metrics(self.model_name)
 
         # Per-streaming-request queues: the scheduler pushes token deltas in,
         # then the finished Sequence as the end-of-stream marker.
         self.streams: dict[str, queue.Queue[str | Sequence]] = {}
 
-        self.model_executor.setup_worker(model_name, dtype)
+        self.model_executor.setup_worker(engine_args.model, engine_args.dtype)
 
         # The scheduler is the only caller of the executor. It re-forms the
         # batch from all unfinished sequences after every single-token step,
@@ -79,19 +89,14 @@ class LLMEngine:
                     )
             self.metrics.observe_iteration(step_tokens)
 
-    def shutdown(self) -> None:
-        # Stop scheduling first so nothing races the worker's exit, then tell
-        # the worker to quit — its process death releases the GPU memory.
-        self.stop_event.set()
-        self.scheduler.join(timeout=10)  # finishes at most one in-flight step
-        self.model_executor.shutdown()
-
     def generate(
-        self, prompts: list[str], temperature: float = 1.0, max_tokens: int = 16
+        self, prompts: list[str], sampling_params: SamplingParams | None = None
     ) -> list[Sequence]:
         # Queue every prompt, wait for the scheduler to finish them all.
+        # None means defaults (a mutable dataclass can't be a default arg).
+        sampling_params = sampling_params or SamplingParams()
         request_ids = [
-            self.workload_manager.add_request(prompt, temperature, max_tokens)
+            self.workload_manager.add_request(prompt, sampling_params)
             for prompt in prompts
         ]
         logger.info("queued %d request(s)", len(request_ids))
@@ -108,7 +113,7 @@ class LLMEngine:
         return sequences
 
     def stream(
-        self, prompt: str, temperature: float = 1.0, max_tokens: int = 16
+        self, prompt: str, sampling_params: SamplingParams | None = None
     ) -> Iterator[str | Sequence]:
         # Yields text deltas, then the finished Sequence as the final item
         # (it carries finish_reason and the token counts).
@@ -117,7 +122,9 @@ class LLMEngine:
         request_id = str(uuid.uuid4())
         stream: queue.Queue[str | Sequence] = queue.Queue()
         self.streams[request_id] = stream
-        self.workload_manager.add_request(prompt, temperature, max_tokens, request_id)
+        self.workload_manager.add_request(
+            prompt, sampling_params or SamplingParams(), request_id
+        )
         try:
             while True:
                 item = stream.get()
@@ -128,3 +135,18 @@ class LLMEngine:
             # Runs on normal completion and on client disconnect.
             del self.streams[request_id]
             self.workload_manager.pop(request_id)
+
+    def shutdown(self) -> None:
+        # Stop scheduling first so nothing races the worker's exit, then tell
+        # the worker to quit — its process death releases the GPU memory.
+        self.stop_event.set()
+        self.scheduler.join(timeout=10)  # finishes at most one in-flight step
+        self.model_executor.shutdown()
+
+    def is_alive(self) -> bool:
+        # Liveness: a dead worker process is unrecoverable.
+        return self.model_executor.is_alive()
+
+    def is_ready(self) -> bool:
+        # Readiness: the worker is up and the model has finished loading.
+        return self.model_executor.is_ready()
