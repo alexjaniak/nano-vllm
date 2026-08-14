@@ -6,6 +6,8 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from transformers import AutoTokenizer
+
 from .metrics import Metrics
 from .model_executor import ModelExecutor
 from .workload_manager import SamplingParams, Sequence, WorkloadManager
@@ -18,8 +20,12 @@ class EngineArgs:
     # Server-level config, named after vLLM's EngineArgs. These field
     # defaults are the single source of truth; the CLI reads them.
     model: str = "Qwen/Qwen3-0.6B"
-    dtype: str = "auto"  # torch dtype name; "auto" keeps the checkpoint's native precision
-    max_num_seqs: int = 8  # max sequences per generation-step batch (vLLM's --max-num-seqs)
+    dtype: str = (
+        "auto"  # torch dtype name; "auto" keeps the checkpoint's native precision
+    )
+    max_num_seqs: int = (
+        256  # max sequences per generation-step batch (vLLM's --max-num-seqs)
+    )
 
 
 class LLMEngine:
@@ -28,6 +34,7 @@ class LLMEngine:
         self.model_executor = ModelExecutor()
         self.workload_manager = WorkloadManager(max_num_seqs=engine_args.max_num_seqs)
         self.metrics = Metrics(self.model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(engine_args.model)
 
         # Per-streaming-request queues: the scheduler pushes token deltas in,
         # then the finished Sequence as the end-of-stream marker.
@@ -45,24 +52,32 @@ class LLMEngine:
     def __schedule_loop(self) -> None:
         while not self.stop_event.is_set():
             batch = self.workload_manager.get_next_batch()
+
             self.metrics.set_queue_depths(
                 running=len(batch),
-                waiting=self.workload_manager.active_count() - len(batch),
+                waiting=self.workload_manager.num_waiting(),
             )
+
+            # TODO: Make this preemptive & async!
             if not batch:
                 time.sleep(0.01)
                 continue
+
             now = time.monotonic()
             for sequence in batch:
                 if sequence.timing.scheduled is None:
                     sequence.timing.scheduled = now
                     self.metrics.observe_queue_time(now - sequence.timing.arrival)
+
             step_tokens = 0  # tokens the model processed this iteration
             for sequence in self.model_executor.execute_batch(
                 batch
             ):  # blocking, so only good for 1 worker
                 now = time.monotonic()
+
+                self.__process_output(sequence)
                 delta = self.workload_manager.update_sequence(sequence)
+
                 # Each step samples exactly one token per sequence; a
                 # sequence's first step also processed its whole prompt.
                 previous_token_time = sequence.timing.last_token
@@ -74,8 +89,9 @@ class LLMEngine:
                 else:
                     step_tokens += 1
                     self.metrics.observe_next_token(now - previous_token_time)
+
                 stream = self.streams.get(sequence.request_id)
-                if stream is not None:
+                if stream is not None:  # Are we streaming?
                     if delta:
                         stream.put(delta)
                     if sequence.finished:
@@ -88,6 +104,63 @@ class LLMEngine:
                         sequence.token_count,
                     )
             self.metrics.observe_iteration(step_tokens)
+
+    def __process_output(self, sequence: Sequence) -> None:
+        # Turn the worker's raw sampled token into text and a finish decision.
+        # The worker only appends to token_ids
+        params = sequence.sampling_params
+        if sequence.token_ids[-1] == self.tokenizer.eos_token_id:
+            sequence.finished = True
+            sequence.finish_reason = "stop"
+            return
+        previous_len = len(sequence.output)
+        sequence.output += self.__detokenize(sequence)
+        new_chars = len(sequence.output) - previous_len
+
+        # Search the new text, with len(stop)-1 chars of overlap to catch
+        # matches spanning token boundaries ("</s>" arriving as "</" + "s>").
+        # TODO: streaming can leak a partial stop string before the match
+        # completes; vLLM holds deltas back by max(len(stop)) - 1 chars.
+        stop_matches = [
+            index
+            for stop in params.stop or []
+            if (index := sequence.output.find(stop, 1 - new_chars - len(stop))) != -1
+        ]
+        if stop_matches:
+            sequence.output = sequence.output[: min(stop_matches)]
+            sequence.finished = True
+            sequence.finish_reason = "stop"
+        elif sequence.token_count >= params.max_tokens:
+            sequence.finished = True
+            sequence.finish_reason = "length"
+
+    def __detokenize(self, sequence: Sequence) -> str:
+        # Incremental detokenization: the text the newest token adds.
+        #
+        # Decoding one id at a time is wrong. A BPE token can be half a UTF-8
+        # character, so decode([id]) returns U+FFFD for anything non-ASCII,
+        # and tokenizers strip the leading-space marker off an isolated token.
+        # Instead decode a short suffix twice — with and without the newest
+        # token — and take the difference. Both decodes start at the same
+        # offset, so a partial character at the front renders identically in
+        # each and cancels out in the slice. The cursors keep the decoded
+        # window a couple of tokens wide, so this stays O(1) per step.
+        ids = sequence.token_ids
+        prefix = self.tokenizer.decode(
+            ids[sequence.prefix_offset : sequence.read_offset],
+            skip_special_tokens=True,
+        )
+        whole = self.tokenizer.decode(
+            ids[sequence.prefix_offset :], skip_special_tokens=True
+        )
+        # A trailing U+FFFD means the newest token opened a multi-byte
+        # character that hasn't finished arriving. Hold the text back and let
+        # the next token complete it, rather than emitting a replacement char.
+        if len(whole) <= len(prefix) or whole.endswith("�"):
+            return ""
+        sequence.prefix_offset = sequence.read_offset
+        sequence.read_offset = len(ids)
+        return whole[len(prefix) :]
 
     def generate(
         self, prompts: list[str], sampling_params: SamplingParams | None = None

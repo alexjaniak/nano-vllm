@@ -13,21 +13,27 @@ class ModelExecutor:
         self.task_queue: mp.Queue[list[Sequence] | None] = mp.Queue()
         self.result_queue: mp.Queue[list[Sequence]] = mp.Queue()
         self.ready_event = mp.Event()  # set by the worker once the model is loaded
-        self.worker_process: mp.Process | None = None
+        self.worker_process: mp.Process | None = None  # currently single-GPU / worker
 
     def setup_worker(self, model_name: str, dtype: str):
         # The model runs in its own process so a slow forward pass never
         # blocks the server's event loop; queues are the only link.
         self.worker_process = mp.Process(
             target=ModelWorker.run,
-            args=(model_name, dtype, self.task_queue, self.result_queue, self.ready_event),
+            args=(
+                model_name,
+                dtype,
+                self.task_queue,
+                self.result_queue,
+                self.ready_event,
+            ),
         )
         self.worker_process.start()
         logger.info("worker process started (pid=%s)", self.worker_process.pid)
 
     def execute_batch(self, batch: list[Sequence]) -> list[Sequence]:
         self.task_queue.put(batch)
-        return self.result_queue.get()
+        return self.result_queue.get()  # only valid for a single worker
 
     def shutdown(self):
         # The worker's process exit is what releases the model's GPU memory —

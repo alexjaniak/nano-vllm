@@ -14,7 +14,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 
 from llm.engine import EngineArgs, LLMEngine
-from llm.logging_config import setup_logging
+from llm.utils import setup_logging
 from llm.workload_manager import SamplingParams, Sequence
 
 setup_logging()

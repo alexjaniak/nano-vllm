@@ -1,5 +1,7 @@
 import logging
 
+import torch
+
 
 def setup_logging() -> None:
     # Called in both the server and the worker (a spawned process doesn't
@@ -12,3 +14,12 @@ def setup_logging() -> None:
     # HTTP request, etc.); keep those at WARNING so our logs stay readable.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+
+
+def get_device() -> str:
+    # Prefer CUDA (NVIDIA), then MPS (Apple Silicon), then fall back to CPU.
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"

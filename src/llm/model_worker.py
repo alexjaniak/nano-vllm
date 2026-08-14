@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import logging
 import multiprocessing as mp
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from multiprocessing.synchronize import Event
 from typing import Any
 
 import torch
 from transformers import DynamicCache
 
-from .logging_config import setup_logging
 from .model_manager import ModelManager
+from .utils import get_device, setup_logging
 from .workload_manager import SamplingParams, Sequence
 
 logger = logging.getLogger(__name__)
@@ -18,24 +18,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DecodeState:
-    # Everything the worker keeps between steps for one sequence. It lives
-    # here rather than on Sequence because the KV cache tensors are far too
-    # big to ship through the mp queues every step.
-    cache: Any
+    # Everything the worker keeps between steps for one sequence
+    cache: Any  # KV Cache
     last_token: int = -1  # fed as the next step's input; unset during prefill
-    token_ids: list[int] = field(default_factory=list)  # generated so far
-    # Cursors into token_ids for incremental detokenization (see _detokenize).
-    prefix_offset: int = 0
-    read_offset: int = 0
-
-
-def get_device() -> str:
-    # Prefer CUDA (NVIDIA), then MPS (Apple Silicon), then fall back to CPU.
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 class ModelWorker:
@@ -43,14 +28,11 @@ class ModelWorker:
         self.device = get_device()
         self.model, self.tokenizer = ModelManager().load_model(model_name, dtype)
         self.model = self.model.to(self.device)
-        # Per-sequence decode state, keyed by request id. Its KV cache holds
-        # every past position's attention keys/values, so a decode step only
-        # computes attention for the one new token instead of re-processing
-        # the whole text — O(n) generation instead of O(n^2).
-        self.states: dict[str, DecodeState] = {}
-        # Per-sequence RNG for seeded requests, created once at prefill —
-        # re-seeding every step would draw the same quantile forever.
+        self.states: dict[str, DecodeState] = {}  # request_id -> DecodeState
+
+        # Per-sequence RNG for seeded requests
         self.generators: dict[str, torch.Generator] = {}
+
         logger.info("loaded %s on %s", model_name, self.device)
 
     @staticmethod
@@ -72,9 +54,7 @@ class ModelWorker:
         logger.info("worker exiting")
 
     def forward_step(self, batch: list[Sequence]) -> list[Sequence]:
-        # One new token per sequence. Each sequence runs its own forward pass:
-        # per-sequence caches have different lengths, and batching ragged
-        # caches is exactly the problem paged attention solves (next).
+        # One new token per sequence
         for sequence in batch:
             params = sequence.sampling_params
             state = self.states.get(sequence.request_id)
@@ -85,13 +65,14 @@ class ModelWorker:
                     sequence.prompt, return_tensors="pt"
                 ).input_ids.to(self.device)
                 sequence.prompt_tokens = input_ids.shape[1]
+
                 state = DecodeState(cache=DynamicCache())
                 self.states[sequence.request_id] = state
+
                 if params.seed is not None:
-                    # CPU generator on purpose — see _sample.
-                    self.generators[sequence.request_id] = (
-                        torch.Generator().manual_seed(params.seed)
-                    )
+                    self.generators[sequence.request_id] = torch.Generator(
+                        device=self.device
+                    ).manual_seed(params.seed)
             else:
                 # Decode: feed only the previous token; everything before it
                 # is already in the cache.
@@ -102,74 +83,28 @@ class ModelWorker:
                     input_ids=input_ids, past_key_values=state.cache, use_cache=True
                 )
 
-            token_id = self._sample(
+            token_id = self.__sample(
                 output.logits[0, -1], params, self.generators.get(sequence.request_id)
             )
+            # The worker's whole contract: append the sampled id. Text and
+            # finish decisions (EOS/stop/length) are the engine's job.
+            sequence.token_ids.append(token_id)
             sequence.token_count += 1
-            if token_id == self.tokenizer.eos_token_id:
-                sequence.finished = True
-                sequence.finish_reason = "stop"
-            else:
-                state.token_ids.append(token_id)
-                sequence.output += self._detokenize(state)
-                # Stop strings: search the whole accumulated output — a stop
-                # string can span token boundaries ("</s>" arriving as "</" +
-                # "s>"). The match onward is cut from the output, like vLLM.
-                stop_matches = [
-                    index
-                    for stop in params.stop or []
-                    if (index := sequence.output.find(stop)) != -1
-                ]
-                if stop_matches:
-                    sequence.output = sequence.output[: min(stop_matches)]
-                    sequence.finished = True
-                    sequence.finish_reason = "stop"
-                elif sequence.token_count >= params.max_tokens:
-                    sequence.finished = True
-                    sequence.finish_reason = "length"
-                else:
-                    state.cache = output.past_key_values
-                    state.last_token = token_id
+            state.cache = output.past_key_values
+            state.last_token = token_id
 
-        # Free cache + generator of anything no longer running: finished this
-        # step, or dropped mid-flight (stopped appearing in batches).
-        active_ids = {s.request_id for s in batch if not s.finished}
+        # Free cache + generator of anything the engine stopped sending:
+        # finished last step, preempted, or dropped (client disconnected).
+        batch_ids = {s.request_id for s in batch}
         self.states = {
-            rid: state for rid, state in self.states.items() if rid in active_ids
+            rid: state for rid, state in self.states.items() if rid in batch_ids
         }
         self.generators = {
-            rid: gen for rid, gen in self.generators.items() if rid in active_ids
+            rid: gen for rid, gen in self.generators.items() if rid in batch_ids
         }
         return batch
 
-    def _detokenize(self, state: DecodeState) -> str:
-        # Incremental detokenization: the text the newest token adds.
-        #
-        # Decoding one id at a time is wrong. A BPE token can be half a UTF-8
-        # character, so decode([id]) returns U+FFFD for anything non-ASCII,
-        # and tokenizers strip the leading-space marker off an isolated token.
-        # Instead decode a short suffix twice — with and without the newest
-        # token — and take the difference. Both decodes start at the same
-        # offset, so a partial character at the front renders identically in
-        # each and cancels out in the slice. The cursors keep the decoded
-        # window a couple of tokens wide, so this stays O(1) per step.
-        ids = state.token_ids
-        prefix = self.tokenizer.decode(
-            ids[state.prefix_offset : state.read_offset], skip_special_tokens=True
-        )
-        whole = self.tokenizer.decode(
-            ids[state.prefix_offset :], skip_special_tokens=True
-        )
-        # A trailing U+FFFD means the newest token opened a multi-byte
-        # character that hasn't finished arriving. Hold the text back and let
-        # the next token complete it, rather than emitting a replacement char.
-        if len(whole) <= len(prefix) or whole.endswith("�"):
-            return ""
-        state.prefix_offset = state.read_offset
-        state.read_offset = len(ids)
-        return whole[len(prefix) :]
-
-    def _sample(
+    def __sample(
         self,
         logits: torch.Tensor,
         params: SamplingParams,
@@ -199,8 +134,4 @@ class ModelWorker:
             )
 
         probs = logits.softmax(dim=-1)
-        if generator is not None:
-            # Seeded draws run on CPU: MPS generator support is flaky, and a
-            # vocab-sized copy per token is negligible next to the forward pass.
-            return int(torch.multinomial(probs.float().cpu(), 1, generator=generator))
-        return int(torch.multinomial(probs, num_samples=1))
+        return int(torch.multinomial(probs, num_samples=1, generator=generator))
