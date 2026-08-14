@@ -4,7 +4,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-import anyio
+import anyio.to_thread
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
