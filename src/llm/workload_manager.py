@@ -87,6 +87,9 @@ class WorkloadManager:
 
         # Request threads add/pop while the scheduler thread batches/updates.
         self._lock = threading.Lock()
+        # Wakes the idle scheduler on arrival; set/cleared under the lock so
+        # a request can't slip in between an empty batch and the wait.
+        self.new_work = threading.Event()
 
     def add_request(
         self,
@@ -102,6 +105,7 @@ class WorkloadManager:
             )
             self.sequences[sequence.request_id] = sequence
             self.waiting.append(sequence.request_id)
+            self.new_work.set()
             return sequence.request_id
 
     def get_next_batch(self) -> list[Sequence]:
@@ -111,6 +115,8 @@ class WorkloadManager:
         with self._lock:
             while self.waiting and len(self.running) < self.max_num_seqs:
                 self.running.append(self.waiting.popleft())
+            if not self.running:  # drained; next add_request re-sets it
+                self.new_work.clear()
             return [self.sequences[rid] for rid in self.running]
 
     def update_sequence(self, sequence: Sequence) -> str:
@@ -147,7 +153,3 @@ class WorkloadManager:
     def num_waiting(self) -> int:
         with self._lock:
             return len(self.waiting)
-
-    def is_finished(self, request_id: str) -> bool:
-        with self._lock:
-            return self.sequences[request_id].finished

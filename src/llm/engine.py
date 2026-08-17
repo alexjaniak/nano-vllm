@@ -1,9 +1,9 @@
+import asyncio
 import logging
-import queue
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
 from transformers import AutoTokenizer
@@ -36,9 +36,10 @@ class LLMEngine:
         self.metrics = Metrics(self.model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(engine_args.model)
 
-        # Per-streaming-request queues: the scheduler pushes token deltas in,
-        # then the finished Sequence as the end-of-stream marker.
-        self.streams: dict[str, queue.Queue[str | Sequence]] = {}
+        # Per-request queues: the scheduler pushes token deltas in, then the
+        # finished Sequence as the end-of-stream marker.
+        self.streams: dict[str, asyncio.Queue[str | Sequence]] = {}
+        self.loop: asyncio.AbstractEventLoop | None = None  # set by stream()
 
         self.model_executor.setup_worker(engine_args.model, engine_args.dtype)
 
@@ -58,9 +59,8 @@ class LLMEngine:
                 waiting=self.workload_manager.num_waiting(),
             )
 
-            # TODO: Make this preemptive & async!
             if not batch:
-                time.sleep(0.01)
+                self.workload_manager.new_work.wait()  # add_request or shutdown
                 continue
 
             now = time.monotonic()
@@ -91,11 +91,13 @@ class LLMEngine:
                     self.metrics.observe_next_token(now - previous_token_time)
 
                 stream = self.streams.get(sequence.request_id)
-                if stream is not None:  # Are we streaming?
+                if stream is not None:
+                    assert self.loop is not None  # stream() set it first
+                    # Hop to the event loop; never block the scheduler on it.
                     if delta:
-                        stream.put(delta)
+                        self.loop.call_soon_threadsafe(stream.put_nowait, delta)
                     if sequence.finished:
-                        stream.put(sequence)  # end-of-stream marker
+                        self.loop.call_soon_threadsafe(stream.put_nowait, sequence)
                 if sequence.finished:
                     self.metrics.observe_finished(sequence, now)
                     logger.info(
@@ -162,45 +164,39 @@ class LLMEngine:
         sequence.read_offset = len(ids)
         return whole[len(prefix) :]
 
-    def generate(
+    async def generate(
         self, prompts: list[str], sampling_params: SamplingParams | None = None
     ) -> list[Sequence]:
-        # Queue every prompt, wait for the scheduler to finish them all.
-        # None means defaults (a mutable dataclass can't be a default arg).
-        sampling_params = sampling_params or SamplingParams()
-        request_ids = [
-            self.workload_manager.add_request(prompt, sampling_params)
-            for prompt in prompts
-        ]
-        logger.info("queued %d request(s)", len(request_ids))
-        while not all(
-            self.workload_manager.is_finished(request_id) for request_id in request_ids
-        ):
-            time.sleep(0.01)
-        # Finished sequences in the same order the prompts came in.
-        sequences: list[Sequence] = []
-        for request_id in request_ids:
-            sequence = self.workload_manager.pop(request_id)
-            assert sequence is not None  # finished sequences stay until we pop them
-            sequences.append(sequence)
-        return sequences
+        # Every request is a stream under the hood; the finished Sequence is
+        # always the last item. gather keeps results in prompt order.
+        logger.info("queued %d request(s)", len(prompts))
 
-    def stream(
+        async def collect(prompt: str) -> Sequence:
+            last: str | Sequence | None = None
+            async for item in self.stream(prompt, sampling_params):
+                last = item  # exhaust fully so stream()'s cleanup runs
+            assert isinstance(last, Sequence)  # the terminal item
+            return last
+
+        return list(await asyncio.gather(*(collect(prompt) for prompt in prompts)))
+
+    async def stream(
         self, prompt: str, sampling_params: SamplingParams | None = None
-    ) -> Iterator[str | Sequence]:
+    ) -> AsyncGenerator[str | Sequence]:
         # Yields text deltas, then the finished Sequence as the final item
         # (it carries finish_reason and the token counts).
         # Register the stream *before* the scheduler can see the sequence,
         # so the first tokens can't slip past us.
+        self.loop = asyncio.get_running_loop()
         request_id = str(uuid.uuid4())
-        stream: queue.Queue[str | Sequence] = queue.Queue()
+        stream: asyncio.Queue[str | Sequence] = asyncio.Queue()
         self.streams[request_id] = stream
         self.workload_manager.add_request(
             prompt, sampling_params or SamplingParams(), request_id
         )
         try:
             while True:
-                item = stream.get()
+                item = await stream.get()
                 yield item
                 if isinstance(item, Sequence):
                     return
@@ -213,6 +209,7 @@ class LLMEngine:
         # Stop scheduling first so nothing races the worker's exit, then tell
         # the worker to quit — its process death releases the GPU memory.
         self.stop_event.set()
+        self.workload_manager.new_work.set()  # unpark the idle wait
         self.scheduler.join(timeout=10)  # finishes at most one in-flight step
         self.model_executor.shutdown()
 

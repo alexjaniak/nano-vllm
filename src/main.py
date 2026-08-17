@@ -1,10 +1,9 @@
 import json
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager
 from typing import Annotated
 
-import anyio.to_thread
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -22,12 +21,6 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # The endpoints below are sync `def`, so Starlette runs each in anyio's
-    # thread pool — capped at 40 threads by default. Under a load test that
-    # cap becomes the bottleneck instead of the engine: excess requests queue
-    # invisibly at the ASGI layer, so num_requests_waiting under-reports and
-    # hides the head-of-line blocking it exists to show.
-    anyio.to_thread.current_default_thread_limiter().total_tokens = 512
     # Load the model on server startup, not import (imports must stay cheap).
     # The CLI (bottom of this file) put the EngineArgs on app.state.
     app.state.engine = LLMEngine(app.state.engine_args)
@@ -136,7 +129,7 @@ def completion_choice(index: int, text: str, finish_reason: str | None) -> dict:
 
 
 @app.post("/v1/completions")
-def completions(request: CompletionRequest):
+async def completions(request: CompletionRequest):
     llm: LLMEngine = app.state.engine
     if request.model != app.state.engine_args.model:
         raise APIError(404, f"model {request.model!r} does not exist", code="model_not_found")
@@ -151,20 +144,22 @@ def completions(request: CompletionRequest):
         if len(prompts) != 1:
             raise APIError(400, "streaming supports a single prompt")
 
-        def event_stream():
+        async def event_stream():
             # Server-sent events: one chunk per token delta, then a final
-            # empty chunk carrying finish_reason, then [DONE].
-            for item in llm.stream(prompts[0], sampling_params):
-                if isinstance(item, Sequence):
-                    choice = completion_choice(0, "", item.finish_reason)
-                else:
-                    choice = completion_choice(0, item, None)
-                yield f"data: {json.dumps(base | {'choices': [choice]})}\n\n"
+            # empty chunk carrying finish_reason, then [DONE]. aclosing makes
+            # a disconnect stop the request now, not whenever GC notices.
+            async with aclosing(llm.stream(prompts[0], sampling_params)) as items:
+                async for item in items:
+                    if isinstance(item, Sequence):
+                        choice = completion_choice(0, "", item.finish_reason)
+                    else:
+                        choice = completion_choice(0, item, None)
+                    yield f"data: {json.dumps(base | {'choices': [choice]})}\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-    sequences = llm.generate(prompts, sampling_params)
+    sequences = await llm.generate(prompts, sampling_params)
     prompt_tokens = sum(s.prompt_tokens for s in sequences)
     completion_tokens = sum(s.token_count for s in sequences)
     return base | {
