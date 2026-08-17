@@ -1,6 +1,0 @@
-engine,phase,rate,start_ms,end_ms,duration_s,grafana_url
-vllm,warmup,-,1786586297113,1786586313184,16,http://localhost:3000/d/nano-vllm-vs-vllm?from=1786586287113&to=1786586323184&var-job=vllm
-vllm,measured,4,1786586323202,1786586340291,17,http://localhost:3000/d/nano-vllm-vs-vllm?from=1786586313202&to=1786586350291&var-job=vllm
-nano-vllm,warmup,-,1786586376435,1786586401641,25,http://localhost:3000/d/nano-vllm-vs-vllm?from=1786586366435&to=1786586411641&var-job=nano-vllm
-nano-vllm,measured,4,1786586411661,1786586437951,26,http://localhost:3000/d/nano-vllm-vs-vllm?from=1786586401661&to=1786586447951&var-job=nano-vllm
-all,full-sweep,-,1786586125096,1786586444018,318,http://localhost:3000/d/nano-vllm-vs-vllm?from=1786586115096&to=1786586454018&var-job=all

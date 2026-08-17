@@ -4,12 +4,12 @@ import logging
 import multiprocessing as mp
 from dataclasses import dataclass
 from multiprocessing.synchronize import Event
-from typing import Any
 
 import torch
-from transformers import DynamicCache
 
 from .model_manager import ModelManager
+from .model_runner import SequenceCache
+from .models import get_runner
 from .utils import get_device, setup_logging
 from .workload_manager import SamplingParams, Sequence
 
@@ -19,15 +19,18 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DecodeState:
     # Everything the worker keeps between steps for one sequence
-    cache: Any  # KV Cache
+    cache: SequenceCache
     last_token: int = -1  # fed as the next step's input; unset during prefill
 
 
 class ModelWorker:
-    def __init__(self, model_name: str, dtype: str):
+    def __init__(self, model_name: str, dtype: str, revision: str | None = None):
         self.device = get_device()
-        self.model, self.tokenizer = ModelManager().load_model(model_name, dtype)
+        self.model, self.tokenizer = ModelManager().load_model(
+            model_name, dtype, revision
+        )
         self.model = self.model.to(self.device)
+        self.runner = get_runner(self.model)
         self.states: dict[str, DecodeState] = {}  # request_id -> DecodeState
 
         # Per-sequence RNG for seeded requests
@@ -39,6 +42,7 @@ class ModelWorker:
     def run(
         model_name: str,
         dtype: str,
+        revision: str | None,
         task_queue: mp.Queue[list[Sequence] | None],
         result_queue: mp.Queue[list[Sequence]],
         ready_event: Event,
@@ -47,50 +51,66 @@ class ModelWorker:
         # the shutdown sentinel (None) arrives. Exiting the process is what
         # frees the model's GPU memory.
         setup_logging()
-        worker = ModelWorker(model_name, dtype)
+        worker = ModelWorker(model_name, dtype, revision)
         ready_event.set()  # model loaded — the server can report ready
         while (batch := task_queue.get()) is not None:
             result_queue.put(worker.forward_step(batch))
         logger.info("worker exiting")
 
     def forward_step(self, batch: list[Sequence]) -> list[Sequence]:
-        # One new token per sequence
+        # One new token per sequence, from a single packed forward pass.
+        # Prefills contribute their whole prompt, decodes one token; the
+        # ragged batch needs no padding and no prefill/decode split.
+        #
+        # `positions` carries each token's index within its own sequence —
+        # packing destroys that (a token's buffer index means nothing), and
+        # RoPE needs it. Same tensor vLLM's runner calls `positions`.
+        input_chunks: list[torch.Tensor] = []
+        positions: list[torch.Tensor] = []
+        q_lens: list[int] = []
+        caches: list[SequenceCache] = []
         for sequence in batch:
-            params = sequence.sampling_params
             state = self.states.get(sequence.request_id)
             if state is None:
-                # Prefill: process the whole prompt once, caching every
-                # position's K/V along the way.
-                input_ids = self.tokenizer(
-                    sequence.prompt, return_tensors="pt"
-                ).input_ids.to(self.device)
-                sequence.prompt_tokens = input_ids.shape[1]
+                # PREFILL: the whole prompt enters the batch at once.
+                ids = self.tokenizer(sequence.prompt, return_tensors="pt").input_ids[0]
+                sequence.prompt_tokens = ids.shape[0]
 
-                state = DecodeState(cache=DynamicCache())
+                state = DecodeState(cache=self.runner.new_cache())
                 self.states[sequence.request_id] = state
 
-                if params.seed is not None:
+                # Create torch generator on device for sampling
+                if sequence.sampling_params.seed is not None:
                     self.generators[sequence.request_id] = torch.Generator(
                         device=self.device
-                    ).manual_seed(params.seed)
+                    ).manual_seed(sequence.sampling_params.seed)
             else:
-                # Decode: feed only the previous token; everything before it
-                # is already in the cache.
-                input_ids = torch.tensor([[state.last_token]], device=self.device)
+                # DECODE: just the previous token; the rest is cached.
+                ids = torch.tensor([state.last_token])
+            start = state.cache.seq_len
+            input_chunks.append(ids)
+            positions.append(torch.arange(start, start + ids.shape[0]))
+            q_lens.append(ids.shape[0])
+            caches.append(state.cache)
 
-            with torch.no_grad():
-                output = self.model(
-                    input_ids=input_ids, past_key_values=state.cache, use_cache=True
-                )
+        logits = self.runner.forward(
+            torch.cat(input_chunks).to(self.device),
+            torch.cat(positions).to(self.device),
+            q_lens,
+            caches,
+        )
 
+        for row, sequence in zip(logits, batch):
+            state = self.states[sequence.request_id]
             token_id = self.__sample(
-                output.logits[0, -1], params, self.generators.get(sequence.request_id)
+                row,
+                sequence.sampling_params,
+                self.generators.get(sequence.request_id),
             )
             # The worker's whole contract: append the sampled id. Text and
             # finish decisions (EOS/stop/length) are the engine's job.
             sequence.token_ids.append(token_id)
             sequence.token_count += 1
-            state.cache = output.past_key_values
             state.last_token = token_id
 
         # Free cache + generator of anything the engine stopped sending:

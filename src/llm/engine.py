@@ -26,6 +26,7 @@ class EngineArgs:
     max_num_seqs: int = (
         256  # max sequences per generation-step batch (vLLM's --max-num-seqs)
     )
+    revision: str | None = None  # pin a model commit; None follows the default branch
 
 
 class LLMEngine:
@@ -34,14 +35,18 @@ class LLMEngine:
         self.model_executor = ModelExecutor()
         self.workload_manager = WorkloadManager(max_num_seqs=engine_args.max_num_seqs)
         self.metrics = Metrics(self.model_name)
-        self.tokenizer = AutoTokenizer.from_pretrained(engine_args.model)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            engine_args.model, revision=engine_args.revision
+        )
 
         # Per-request queues: the scheduler pushes token deltas in, then the
         # finished Sequence as the end-of-stream marker.
         self.streams: dict[str, asyncio.Queue[str | Sequence]] = {}
         self.loop: asyncio.AbstractEventLoop | None = None  # set by stream()
 
-        self.model_executor.setup_worker(engine_args.model, engine_args.dtype)
+        self.model_executor.setup_worker(
+            engine_args.model, engine_args.dtype, engine_args.revision
+        )
 
         # The scheduler is the only caller of the executor. It re-forms the
         # batch from all unfinished sequences after every single-token step,

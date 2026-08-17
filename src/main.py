@@ -193,6 +193,10 @@ def serve(
         str,
         typer.Option(help="Torch dtype (e.g. float16); 'auto' keeps the checkpoint's native precision."),
     ] = _ARGS.dtype,
+    revision: Annotated[
+        str | None,
+        typer.Option(help="Pin a model commit. Benchmarks need it — the default branch moves."),
+    ] = _ARGS.revision,
     max_num_seqs: Annotated[
         int,
         typer.Option(help="Max sequences batched per generation step (vLLM's --max-num-seqs)."),
@@ -203,7 +207,9 @@ def serve(
     port: Annotated[int, typer.Option(help="Port to listen on.")] = 8001,
 ) -> None:
     """Serve MODEL over an OpenAI-compatible HTTP API."""
-    app.state.engine_args = EngineArgs(model=model, dtype=dtype, max_num_seqs=max_num_seqs)
+    app.state.engine_args = EngineArgs(
+        model=model, dtype=dtype, max_num_seqs=max_num_seqs, revision=revision
+    )
     uvicorn.run(app, host=host, port=port)
 
 

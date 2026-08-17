@@ -15,7 +15,7 @@ class ModelExecutor:
         self.ready_event = mp.Event()  # set by the worker once the model is loaded
         self.worker_process: mp.Process | None = None  # currently single-GPU / worker
 
-    def setup_worker(self, model_name: str, dtype: str):
+    def setup_worker(self, model_name: str, dtype: str, revision: str | None = None):
         # The model runs in its own process so a slow forward pass never
         # blocks the server's event loop; queues are the only link.
         self.worker_process = mp.Process(
@@ -23,6 +23,7 @@ class ModelExecutor:
             args=(
                 model_name,
                 dtype,
+                revision,
                 self.task_queue,
                 self.result_queue,
                 self.ready_event,
