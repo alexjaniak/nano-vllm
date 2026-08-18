@@ -1,0 +1,16 @@
+engine,phase,scenario,start_ms,end_ms,duration_s,grafana_url
+vllm,warmup,matched,1787072568571,1787072595129,26,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787072523571&to=1787072640129&var-job=vllm
+vllm,measured,fixed,1787072640129,1787072705401,65,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787072595129&to=1787072750401&var-job=vllm
+vllm,measured,ragged,1787072750401,1787072859649,109,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787072705401&to=1787072904649&var-job=vllm
+vllm,measured,ragged-sla,1787072904649,1787073015064,110,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787072859649&to=1787073060064&var-job=vllm
+vllm,measured,prefix,1787073060064,1787073123623,63,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787073015064&to=1787073168623&var-job=vllm
+vllm,warmup,native,1787073368262,1787073395096,26,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787073323262&to=1787073440096&var-job=vllm
+vllm,measured,ragged-native,1787073440097,1787073481460,41,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787073395097&to=1787073526460&var-job=vllm
+nano-vllm,warmup,matched,1787073587984,1787073620663,32,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787073542984&to=1787073665663&var-job=nano-vllm
+nano-vllm,measured,fixed,1787073665664,1787074063503,397,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787073620664&to=1787074108503&var-job=nano-vllm
+nano-vllm,measured,ragged,1787074108504,1787074812937,704,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787074063504&to=1787074857937&var-job=nano-vllm
+nano-vllm,measured,ragged-sla,1787074857938,1787075643225,785,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787074812938&to=1787075688225&var-job=nano-vllm
+nano-vllm,measured,prefix,1787075688226,1787076114778,426,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787075643226&to=1787076159778&var-job=nano-vllm
+nano-vllm,warmup,native,1787076131688,1787076163862,32,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787076086688&to=1787076208862&var-job=nano-vllm
+nano-vllm,measured,ragged-native,1787076208862,1787076957615,748,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787076163862&to=1787077002615&var-job=nano-vllm
+all,full-sweep,-,1787072329737,1787076959789,4630,http://localhost:3000/d/nano-vllm-vs-vllm?from=1787072269737&to=1787077019789&var-job=all
