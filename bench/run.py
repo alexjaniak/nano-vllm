@@ -98,7 +98,10 @@ def wait_vram_free(timeout: int = 180) -> None:
 def compose(args: list[str], env: dict[str, str], profile: str | None = None,
             check: bool = True, **kw) -> subprocess.CompletedProcess:
     cmd = COMPOSE + (["--profile", profile] if profile else []) + args
-    proc = subprocess.run(cmd, text=True, env={**os.environ, **env}, **kw)
+    # setdefault, not a literal: callers that want captured output pass text=True
+    # themselves, and a duplicate keyword is a TypeError.
+    kw.setdefault("text", True)
+    proc = subprocess.run(cmd, env={**os.environ, **env}, **kw)
     if check and proc.returncode != 0:
         raise RuntimeError(f"compose {' '.join(args[:2])} failed ({proc.returncode})")
     return proc
