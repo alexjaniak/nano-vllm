@@ -1,0 +1,11 @@
+engine,scenario,dram_active,tensor_active,fb_used_mib
+vllm,fixed,0.16,0.033,27448.615
+vllm,ragged,0.395,0.058,27450.0
+vllm,ragged-sla,0.4,0.038,27450.0
+vllm,prefix,0.155,0.023,27450.571
+vllm,ragged-native,0.006,0.148,28324.0
+nano-vllm,fixed,0.084,0.011,18242.0
+nano-vllm,ragged,0.136,0.006,18736.693
+nano-vllm,ragged-sla,0.135,0.006,18914.0
+nano-vllm,prefix,0.337,0.024,23280.859
+nano-vllm,ragged-native,0.135,0.006,18688.126
