@@ -14,15 +14,42 @@ set -euo pipefail
 
 say() { printf '\n== %s\n' "$*"; }
 
+# --- freeze the driver ------------------------------------------------------
+# Do this before any apt work. jammy-security ships newer driver packages, and
+# an apt-get update is enough for unattended-upgrades to install one in the
+# background — userspace then jumps ahead of the loaded kernel module and
+# nvidia-smi dies with "Driver/library version mismatch" until a DKMS rebuild
+# and a reboot. The hold stays on afterwards; a benchmark box wants a driver
+# that cannot move, same reason spec-v1.toml pins everything else.
+say "freezing driver packages"
+drv=$(dpkg -l | awk '/^ii +(nvidia|libnvidia)/ {print $2}' | grep -v container || true)
+if [ -n "$drv" ]; then
+  # shellcheck disable=SC2086
+  apt-mark hold $drv >/dev/null
+  echo "held $(echo "$drv" | wc -l) packages at $(cat /proc/driver/nvidia/version 2>/dev/null \
+    | awk '{print $8}' || echo unknown)"
+fi
+
 # --- driver -----------------------------------------------------------------
-# Consumer Blackwell (5090, sm_120) only works with the OPEN kernel modules.
-# The proprietary flavor of the same version loads, taints, then finds zero
-# devices — nvidia-smi says "No devices were found" and nothing downstream
-# works. Detect it here; the fix needs a reboot so it cannot be silent.
 say "driver"
 if ! nvidia-smi -L >/dev/null 2>&1; then
-  if modinfo nvidia 2>/dev/null | grep -qi 'license.*NVIDIA' \
-     && ! modinfo nvidia 2>/dev/null | grep -qi 'Dual MIT/GPL'; then
+  # Userspace and module out of step — the packages are usually fine, only the
+  # built module is stale, so name the rebuild rather than the hardware.
+  if nvidia-smi 2>&1 | grep -qi 'version mismatch'; then
+    dkms_pkg=$(dpkg -l | awk '/^ii +nvidia-dkms/ {print $2}' | head -1)
+    cat <<EOF
+FATAL: driver userspace and the loaded kernel module disagree.
+  loaded: $(cat /proc/driver/nvidia/version 2>/dev/null | awk '{print $8}' || echo '?')
+  fix:    apt-get install --reinstall -y ${dkms_pkg:-nvidia-dkms-<branch>}
+          update-initramfs -u && reboot
+EOF
+    exit 1
+  fi
+  # Consumer Blackwell (5090, sm_120) only works with the OPEN kernel modules.
+  # Given the proprietary flavor the module loads, taints, then finds zero
+  # devices — nvidia-smi says "No devices were found" while lspci shows the
+  # card, so it reads like broken passthrough rather than a wrong package.
+  if modinfo nvidia 2>/dev/null | grep -qi '^license: *NVIDIA'; then
     branch=$(modinfo nvidia | awk '/^version:/ {split($2, v, "."); print v[1]}')
     cat <<EOF
 FATAL: proprietary NVIDIA modules installed; Blackwell needs the open ones.
@@ -52,7 +79,7 @@ else
     | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
     > /etc/apt/sources.list.d/nvidia-container-toolkit.list
   apt-get update -qq
-  apt-get install -y -qq nvidia-container-toolkit
+  apt-get install -y -qq --no-install-recommends nvidia-container-toolkit
   nvidia-ctk runtime configure --runtime=docker
   systemctl restart docker
 fi
@@ -69,7 +96,10 @@ fi
 $PY --version
 
 # --- verify -----------------------------------------------------------------
+# The driver can be upgraded out from under a loaded module by anything that
+# runs apt, so re-check it here rather than trusting the earlier pass.
 say "verify"
+nvidia-smi -L
 docker run --rm --gpus all ubuntu:22.04 nvidia-smi -L
 docker compose version
 $PY -c 'import tomllib; print("tomllib ok")'
