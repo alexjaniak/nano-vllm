@@ -108,11 +108,13 @@ class DecoderRunner:
         total = input_ids.shape[0]
         device = input_ids.device
 
+        # cumulative sequence lengths
         cu_q = torch.tensor([0] + q_lens, device=device).cumsum(0)
         k_lens = [cache.seq_len + q_len for cache, q_len in zip(caches, q_lens)]
         cu_k = torch.tensor([0] + k_lens, device=device).cumsum(0)
 
         hidden = base.embed_tokens(input_ids)
+
         # rotary_emb reads only dtype/device from its first arg.
         cos, sin = base.rotary_emb(hidden.unsqueeze(0), position_ids.unsqueeze(0))
         cos, sin = cos[0].unsqueeze(1), sin[0].unsqueeze(1)  # [total, 1, head_dim]

@@ -1,6 +1,21 @@
 [tool.pyright]
 typeCheckingMode = "standard"
 
+[tool.ruff]
+# Keep linting and formatting consistent with Ruff's default/Black-compatible
+# width. Ruff uses this as a wrapping target; it is not a hard guarantee for
+# comments and long strings.
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+# Ruff's safe default rule set, made explicit for editor/CI consistency.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.format]
+# A trailing comma preserves an intentionally stacked/multiline signature.
+skip-magic-trailing-comma = false
+
 [project]
 name = "nano-vllm"
 version = "0.1.0"

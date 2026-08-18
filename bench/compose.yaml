@@ -1,0 +1,105 @@
+# Benchmark rig. run.py drives this; you rarely invoke it by hand.
+#
+# Engines are containers so that stopping one is a HARD guarantee the VRAM came
+# back — the old sweep.sh had to do supervisorctl + pkill + sleep and hope.
+# The load generator runs from the same pinned vLLM image as the engine under
+# test, so the measuring instrument is frozen alongside what it measures.
+#
+# Profiles: obs (prometheus/grafana/dcgm), vllm, nano-vllm, bench.
+
+name: nano-bench
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+x-hf: &hf
+  # Model downloaded once by run.py's preflight, then read from cache — never
+  # inside a timed phase.
+  volumes:
+    - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface
+  environment:
+    HF_HOME: /root/.cache/huggingface
+
+services:
+  vllm:
+    profiles: [vllm]
+    image: ${VLLM_IMAGE:?set by run.py from spec-v1.toml}
+    <<: [*gpu, *hf]
+    ipc: host          # torch shared memory; the default 64MB shm is not enough
+    ports: ["${VLLM_PORT:-8000}:8000"]
+    # Pinned explicitly rather than inherited: the image's ENTRYPOINT has moved
+    # across vLLM releases, and a frozen spec cannot depend on which one it is.
+    entrypoint: ["vllm", "serve"]
+    command:
+      - "${MODEL:?}"
+      - "--revision=${MODEL_REVISION:?}"
+      - "--host=0.0.0.0"
+      - "--port=8000"
+      - "--dtype=${DTYPE:?}"
+      - "--max-num-seqs=${MAX_NUM_SEQS:?}"
+      - "--max-model-len=${MAX_MODEL_LEN:?}"
+      - "--gpu-memory-utilization=${GPU_MEM_UTIL:?}"
+      - "--seed=${SEED:?}"
+
+  nano-vllm:
+    profiles: [nano-vllm]
+    image: nano-vllm:bench
+    build:
+      context: ..                      # needs src/ from the repo root
+      dockerfile: bench/Dockerfile.nano
+      args:
+        VLLM_IMAGE: ${VLLM_IMAGE:?}
+    <<: [*gpu, *hf]
+    ipc: host
+    ports: ["${NANO_PORT:-8001}:8001"]
+    command:
+      - "--model=${MODEL:?}"
+      - "--revision=${MODEL_REVISION:?}"
+      - "--host=0.0.0.0"
+      - "--port=8001"
+      - "--dtype=${DTYPE:?}"
+      - "--max-num-seqs=${MAX_NUM_SEQS:?}"
+
+  bench:
+    profiles: [bench]
+    image: ${VLLM_IMAGE:?}
+    <<: *hf
+    entrypoint: ["vllm", "bench", "serve"]
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface
+      - ${RESULTS_DIR:?}:/results
+    # Reaches engines by service name on the compose network — no
+    # host.docker.internal, no SSH-tunnel port juggling.
+
+  prometheus:
+    profiles: [obs]
+    image: prom/prometheus:v3.7.3
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    profiles: [obs]
+    image: grafana/grafana:12.3.1
+    ports: ["3000:3000"]
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 1s
+
+  dcgm-exporter:
+    profiles: [obs]
+    image: nvidia/dcgm-exporter:4.6.0-4.8.3-distroless
+    <<: *gpu
+    cap_add: [SYS_ADMIN]
+    ports: ["9400:9400"]

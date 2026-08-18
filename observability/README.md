@@ -5,6 +5,11 @@ Prometheus (:9090) scrapes both servers' `/metrics` every 1s; Grafana
 told apart by the scrape job label; a server that isn't running shows as
 a `down` target.
 
+> For the head-to-head benchmark use `bench/compose.yaml` instead — it brings
+> up this same stack (plus `dcgm-exporter` for GPU counters) alongside the
+> engines, scraping them by service name. The compose file here is for ad-hoc
+> local poking at servers you started yourself.
+
 ```sh
 docker compose up -d        # Prometheus + Grafana
 ```

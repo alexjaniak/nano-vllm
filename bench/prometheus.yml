@@ -1,0 +1,24 @@
+# Both engines emit identically-named vllm:* metrics; the `job` label is what
+# tells their series apart on the dashboard. Targets are compose service names
+# — everything shares one network, so no host.docker.internal indirection.
+global:
+  scrape_interval: 1s # benchmark runs are short; the 15s default is too coarse
+
+scrape_configs:
+  - job_name: nano-vllm
+    static_configs:
+      - targets: ["nano-vllm:8001"]
+
+  - job_name: vllm
+    static_configs:
+      - targets: ["vllm:8000"]
+
+  # GPU counters. DCGM_FI_PROF_DRAM_ACTIVE is the one that carries the batching
+  # argument: single-sequence decode is memory-bandwidth bound (the whole model
+  # is read to produce one token), so a working batched forward pass shows up as
+  # bandwidth staying pinned while tok/s multiplies — bytes-per-token collapsing.
+  # Profiling counters are historically restricted on consumer cards; FB_USED
+  # and GPU_UTIL always work, DRAM_ACTIVE may not. See bench/README.md.
+  - job_name: dcgm
+    static_configs:
+      - targets: ["dcgm-exporter:9400"]

@@ -1,0 +1,116 @@
+# nano-vllm benchmark spec v1 — FROZEN.
+#
+# Nothing in this file changes, ever. Improving the benchmark means writing
+# spec-v2.toml and taking a fresh baseline for both engines; editing v1 in
+# place silently invalidates every run that came before it. run.py hashes this
+# file into each run's manifest.json so drift is detectable after the fact.
+#
+# The headline metric is nano-vllm output tok/s ÷ vLLM output tok/s, both
+# measured in the same sweep on the same box. A ratio is immune to a different
+# rental GPU, a driver bump, or thermal variance; absolute tok/s is not.
+
+version = 1
+
+[model]
+id = "Qwen/Qwen3-8B"
+# A commit, not `main` — the ref moves, and moving weights would change the
+# workload underneath the comparison.
+revision = "b968826d9c46dd6066d109eabc6255188de91218"
+dtype = "bfloat16"
+max_model_len = 4096
+
+[run]
+seed = 0
+gpu_memory_utilization = 0.90
+# v0's cap (2026-08-13). Holding both engines at the same small number is what
+# isolates executor quality from "vLLM just batches wider".
+matched_max_num_seqs = 8
+quiet_gap_s = 45   # dead zones either side of a measured run, for the Grafana timeline
+swap_gap_s = 90    # longer pause when swapping which engine owns the GPU
+warmup_prompts = 16
+
+[engines.vllm]
+image = "vllm/vllm-openai:v0.27.1"
+port = 8000
+health_path = "/health"
+native_max_num_seqs = 256   # vLLM's own default
+
+[engines.nano-vllm]
+build = true
+port = 8001
+# /health is liveness only (is the worker alive); /ready gates on model load.
+health_path = "/ready"
+native_max_num_seqs = 8     # nano-vllm's own default — expected to rise over time
+
+# ---------------------------------------------------------------------------
+# Scenarios. Each is a mechanism the engine either has or doesn't; a scenario
+# that reads flat today (prefix) is here precisely so it has a baseline for
+# the day it stops reading flat.
+#
+# Sized for the SLOW engine. At v0's 46 tok/s the full sweep is ~95 min; it
+# shrinks as nano-vllm improves, which is the right direction for a frozen spec.
+# ---------------------------------------------------------------------------
+
+[[scenarios]]
+name = "fixed"
+config = "matched"
+request_rate = "inf"
+num_prompts = 200
+note = "bridge to the v0 baseline — identical 512/128 workload. Mostly a kernel-speed signal."
+[scenarios.args]
+dataset-name = "random"
+random-input-len = 512
+random-output-len = 128
+random-range-ratio = 0.0
+
+[[scenarios]]
+name = "ragged"
+config = "matched"
+request_rate = "inf"
+num_prompts = 100
+note = "THE HEADLINE. Variable output lengths are where scheduling, head-of-line blocking and KV fragmentation show up; fixed 128-token outputs hide all three."
+[scenarios.args]
+dataset-name = "random"
+random-input-len = 512
+random-output-len = 512
+# Uniform over [len*(1-r), len*(1+r)] — outputs land in [128, 896].
+# Not lognormal: this is what the pinned harness actually implements.
+random-range-ratio = 0.75
+
+[[scenarios]]
+name = "ragged-sla"
+config = "matched"
+request_rate = 4
+num_prompts = 100
+note = "Goodput under an SLA, at a fixed offered rate. Reads ~0% until the engine can keep up, then climbs — the metric that stays meaningful once raw tok/s stops discriminating."
+[scenarios.args]
+dataset-name = "random"
+random-input-len = 512
+random-output-len = 512
+random-range-ratio = 0.75
+goodput = ["ttft:2000", "tpot:50"]
+
+[[scenarios]]
+name = "prefix"
+config = "matched"
+request_rate = "inf"
+num_prompts = 100
+note = "2k shared prefix across every request. Worth nothing without prefix caching — frozen in now so the feature has a before-number to beat."
+[scenarios.args]
+dataset-name = "random"
+random-prefix-len = 2048
+random-input-len = 128
+random-output-len = 256
+random-range-ratio = 0.0
+
+[[scenarios]]
+name = "ragged-native"
+config = "native"
+request_rate = "inf"
+num_prompts = 100
+note = "Same load as `ragged`, but each engine runs at its OWN max_num_seqs default. The deployment number — and the only place a future paged-KV win in concurrency can show up."
+[scenarios.args]
+dataset-name = "random"
+random-input-len = 512
+random-output-len = 512
+random-range-ratio = 0.75

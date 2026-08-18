@@ -58,6 +58,24 @@ vllm bench serve --backend openai --base-url http://127.0.0.1:8001 \
   --model Qwen/Qwen3-0.6B --dataset-name sharegpt --num-prompts 200 --request-rate 4
 ```
 
+## Benchmarks
+
+`bench/` runs the real head-to-head on a frozen spec — same workload, same
+model commit, same pinned vLLM image, every time, so runs months apart stay
+comparable. The tracked number is nano-vllm's throughput as a fraction of
+vLLM's, per scenario, in `bench/HISTORY.md`.
+
+```bash
+python3 bench/run.py --dry-run   # the plan and the pins
+python3 bench/run.py             # full sweep (needs a GPU box + docker)
+python3 bench/report.py          # table, and one row appended to HISTORY.md
+```
+
+See [`bench/README.md`](bench/README.md). Earlier results live under
+`experiments/` — the v0 baseline (2026-08-13) predates the frozen spec and
+isn't exactly reproducible, so v1 re-runs its workload as the `fixed` scenario
+to bridge the two.
+
 Default model is `Qwen/Qwen3-0.6B` (downloads on first run), on CUDA/MPS/CPU — whatever is available. Pick a different model with `--model`, and cap the per-step batch with `--max-num-seqs` (vLLM's flag name):
 
 ```bash

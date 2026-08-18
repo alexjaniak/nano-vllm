@@ -174,12 +174,19 @@ same one.
 ## Artifacts
 
 - `throughput.png` — throughput vs offered load, both engines
-- `sweep/*.json` — raw `vllm bench serve` output, 10 runs
-- `sweep/timeline.csv` — per-phase epoch-ms windows
-- `scripts/sweep.sh`, `scripts/report.py`, `scripts/chart.py` (repo root) — reproduction
-- Grafana panels worth showing: **Token Throughput** (the staircase then the
-  flat line) and **Scheduler State** (running pinned at 8, waiting climbing
-  to ~190)
+- `sweep/*.json` — raw `vllm bench serve` output, 10 runs; every number above
+  comes from these
+
+Server logs, per-run bench logs, the rehearsal sweep and the Grafana timeline
+were dropped once the findings were written up. They are in git history at
+`56d49a7` if ever needed.
+
+This run predates the frozen-spec harness in `bench/`, and was produced by a
+shell script (`scripts/sweep.sh`, also at `56d49a7`) against an untagged vLLM
+dev build — `0.26.1rc1.dev608+g99a10304d`. **It is therefore not exactly
+reproducible**, which is the specific problem `bench/spec-v1.toml` exists to
+solve. Treat these numbers as the v0 datapoint; v1's `fixed` scenario runs the
+same 512/128 workload as a bridge.
 
 ## Closing the gap
 
