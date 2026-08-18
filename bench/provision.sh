@@ -45,8 +45,9 @@ say "container toolkit"
 if docker run --rm --gpus all ubuntu:22.04 nvidia-smi -L >/dev/null 2>&1; then
   echo "already working"
 else
+  # --yes: gpg prompts on an existing keyring, which would hang a curl|bash run.
   curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-    | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+    | gpg --dearmor --yes -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
   curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
     | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
     > /etc/apt/sources.list.d/nvidia-container-toolkit.list

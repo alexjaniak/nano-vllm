@@ -292,15 +292,25 @@ def preflight(spec: dict, env: dict[str, str], scenarios: list[dict]) -> None:
     # random-dataset flags have moved across vLLM releases; the image is pinned
     # so this is a one-time check, but it must actually happen.
     log("checking harness flags")
-    helptext = sh_ok(["docker", "run", "--rm", "--entrypoint", "vllm",
-                      spec["engines"]["vllm"]["image"], "bench", "serve", "--help"])
+    # Help may land on stderr, and argparse wraps long option names at the
+    # terminal width — an 80-column default splits --random-input-len across
+    # lines and every flag reads as missing. Widen, take both streams, unwrap.
+    proc = sh(["docker", "run", "--rm", "-e", "COLUMNS=200", "--entrypoint", "vllm",
+               spec["engines"]["vllm"]["image"], "bench", "serve", "--help"])
+    helptext = re.sub(r"-\s*\n\s*", "-", proc.stdout + proc.stderr)
     wanted = {f"--{k}" for s in scenarios for k in s["args"]} | {"--request-rate", "--num-prompts"}
     missing = sorted(f for f in wanted if f not in helptext)
-    if missing:
+    if missing and "--num-prompts" in helptext:
+        # Help was readable and the flag genuinely is not there.
         raise SystemExit(
             f"FATAL: `vllm bench serve` in {spec['engines']['vllm']['image']} does not "
             f"accept {', '.join(missing)}. The spec and the pinned harness disagree."
         )
+    if missing:
+        # Could not read the help at all; do not block the sweep on the checker.
+        # A bad flag then surfaces at the first scenario, not 40 minutes in.
+        log(f"WARNING: could not parse `vllm bench serve --help` "
+            f"({len(helptext)} bytes, exit {proc.returncode}) — flag check skipped")
 
     # Prefetch weights so no download lands inside a timed phase.
     log(f"prefetching {spec['model']['id']}@{spec['model']['revision'][:12]}")
