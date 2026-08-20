@@ -184,31 +184,43 @@ cli = typer.Typer(add_completion=False)
 _ARGS = EngineArgs()
 
 
+# Every option also reads a NANO_* env var, so a container is configurable
+# without rewriting its command. Precedence: flag > env var > default.
 @cli.command()
 def serve(
     model: Annotated[
-        str, typer.Option(help="Hugging Face model to serve.")
+        str, typer.Option(envvar="NANO_MODEL", help="Hugging Face model to serve.")
     ] = _ARGS.model,
     dtype: Annotated[
         str,
-        typer.Option(help="Torch dtype (e.g. float16); 'auto' keeps the checkpoint's native precision."),
+        typer.Option(envvar="NANO_DTYPE", help="Torch dtype (e.g. float16); 'auto' keeps the checkpoint's native precision."),
     ] = _ARGS.dtype,
     revision: Annotated[
         str | None,
-        typer.Option(help="Pin a model commit. Benchmarks need it — the default branch moves."),
+        typer.Option(envvar="NANO_REVISION", help="Pin a model commit. Benchmarks need it — the default branch moves."),
     ] = _ARGS.revision,
     max_num_seqs: Annotated[
         int,
-        typer.Option(help="Max sequences batched per generation step (vLLM's --max-num-seqs)."),
+        typer.Option(envvar="NANO_MAX_NUM_SEQS", help="Max sequences batched per generation step (vLLM's --max-num-seqs)."),
     ] = _ARGS.max_num_seqs,
-    host: Annotated[str, typer.Option(help="Interface to bind.")] = "127.0.0.1",
+    attention: Annotated[
+        str,
+        typer.Option(envvar="NANO_ATTENTION", help="Attention implementation: sdpa (torch), flash1 (our kernel), flash2 (flash-attn package)."),
+    ] = _ARGS.attention,
+    # Loopback by default; the image sets NANO_HOST=0.0.0.0, since a container
+    # bound to 127.0.0.1 is unreachable through -p.
+    host: Annotated[str, typer.Option(envvar="NANO_HOST", help="Interface to bind.")] = "127.0.0.1",
     # 8001 by default so vLLM can keep its default 8000 when both run for
     # the head-to-head benchmark.
-    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8001,
+    port: Annotated[int, typer.Option(envvar="NANO_PORT", help="Port to listen on.")] = 8001,
 ) -> None:
     """Serve MODEL over an OpenAI-compatible HTTP API."""
     app.state.engine_args = EngineArgs(
-        model=model, dtype=dtype, max_num_seqs=max_num_seqs, revision=revision
+        model=model,
+        dtype=dtype,
+        max_num_seqs=max_num_seqs,
+        revision=revision,
+        attention=attention,
     )
     uvicorn.run(app, host=host, port=port)
 
