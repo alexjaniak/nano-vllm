@@ -151,6 +151,8 @@ def base_env(spec: dict, results_dir: Path, max_num_seqs: int) -> dict[str, str]
         "MAX_NUM_SEQS": str(max_num_seqs),
         "RESULTS_DIR": str(results_dir),
         "HF_CACHE": os.environ.get("HF_CACHE", str(Path.home() / ".cache" / "huggingface")),
+        # Compose interpolation for the host side of each port mapping; the
+        # servers get their port as a CLI arg.
         "VLLM_PORT": str(spec["engines"]["vllm"]["port"]),
         "NANO_PORT": str(spec["engines"]["nano-vllm"]["port"]),
     }
@@ -222,22 +224,21 @@ def build_manifest(spec: dict, spec_path: Path, env: dict[str, str]) -> dict:
     }
 
 
-def assert_same_toolchain(manifest: dict) -> None:
-    """The shared-base guarantee, verified rather than assumed. If these
-    diverge, every kernel-level claim in the writeup is unfounded."""
+def log_toolchains(manifest: dict) -> None:
+    """Each engine now brings its own wheels — nano-vllm from uv.lock, vLLM from
+    its image — so record both rather than asserting they match. Where they
+    differ, a kernel-level claim has to argue past the difference instead of
+    assuming it away."""
     a = manifest["toolchain"]["vllm"]
     b = manifest["toolchain"]["nano-vllm"]
     if "error" in a or "error" in b:
         log(f"WARNING: could not read toolchain ({a.get('error') or b.get('error')})")
         return
+    log(f"toolchain: vllm torch {a['torch']}/cu{a['cuda']}, "
+        f"nano torch {b['torch']}/cu{b['cuda']}")
     if (a["torch"], a["cuda"]) != (b["torch"], b["cuda"]):
-        raise SystemExit(
-            f"FATAL: engines are on different toolchains — "
-            f"vllm torch {a['torch']}/cu{a['cuda']} vs "
-            f"nano torch {b['torch']}/cu{b['cuda']}. "
-            f"Rebuild nano-vllm:bench from the pinned VLLM_IMAGE."
-        )
-    log(f"toolchain matched: torch {a['torch']}, cuda {a['cuda']}")
+        log("WARNING: engines are on different torch/CUDA builds — a kernel-level "
+            "gap is not attributable to nano-vllm's code alone")
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +483,7 @@ def main() -> int:
     preflight(spec, env, scenarios)
 
     manifest = build_manifest(spec, spec_path, env)
-    assert_same_toolchain(manifest)
+    log_toolchains(manifest)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     if manifest["nano_vllm"]["dirty"]:
         log("WARNING: src/ is dirty — this run is not reproducible from a commit")

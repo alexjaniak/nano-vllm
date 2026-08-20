@@ -153,14 +153,16 @@ Three things the old `sweep.sh` couldn't do:
 - **The measuring instrument is pinned.** `vllm bench serve` runs from the same
   pinned image as the vLLM under test. Previously it was whatever the host
   image shipped, and its metric definitions have moved across releases.
-- **Any commit can be re-baselined.** `Dockerfile.nano` builds from the repo, so
-  checking out an old SHA and re-running reproduces that commit's numbers
-  against the same frozen opponent.
+- **Any commit can be re-baselined.** `docker/Dockerfile` builds from the repo
+  and its lockfile, so checking out an old SHA and re-running reproduces that
+  commit's numbers — same deps, same frozen opponent.
 
-`Dockerfile.nano` builds `FROM` the pinned vLLM image and installs nano-vllm's
-deps under a torch constraint, so both engines run byte-identical torch, CUDA
-and FlashAttention builds. `run.py` asserts this at startup and aborts if they
-diverge — without it, every kernel-level claim in a writeup is unfounded.
+Each engine runs the image it ships as: vLLM its pinned release image,
+nano-vllm the standalone `docker/Dockerfile` built from `uv.lock`. That is the
+honest comparison — what someone would actually deploy — but it means the two
+sides no longer share wheels. `run.py` reads torch/CUDA from inside both
+containers into `manifest.json` and warns when they differ; a kernel-level
+claim has to argue past that difference rather than assume it away.
 
 ## GPU metrics
 

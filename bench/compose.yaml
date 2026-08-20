@@ -52,9 +52,7 @@ services:
     image: nano-vllm:bench
     build:
       context: ..                      # needs src/ from the repo root
-      dockerfile: bench/Dockerfile.nano
-      args:
-        VLLM_IMAGE: ${VLLM_IMAGE:?}
+      dockerfile: docker/Dockerfile    # standalone image; owns its own torch
     <<: [*gpu, *hf]
     ipc: host
     ports: ["${NANO_PORT:-8001}:8001"]
