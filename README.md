@@ -58,11 +58,42 @@ vllm bench serve --backend openai --base-url http://127.0.0.1:8001 \
   --model Qwen/Qwen3-0.6B --dataset-name sharegpt --num-prompts 200 --request-rate 4
 ```
 
+## Run it with Docker
+
+`docker/Dockerfile` is self-contained: a CUDA runtime base plus this repo's `uv.lock`, so the image is the lockfile and nothing else. The host supplies the driver and the [NVIDIA container toolkit](https://github.com/NVIDIA/nvidia-container-toolkit); torch brings its own CUDA libs. Server flags are appended after the tag, the way vLLM's own image works:
+
+```bash
+docker run --gpus all -p 8001:8001 --ipc=host \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  ghcr.io/alexjaniak/nano-vllm:<sha> \
+  --model Qwen/Qwen3-8B --max-num-seqs 8
+```
+
+Every flag is also a `NANO_*` env var — `NANO_MODEL`, `NANO_MAX_NUM_SEQS`, `NANO_HOST`, `NANO_PORT` — for orchestrators that would rather set environment than rewrite a command. A flag still wins over the env var:
+
+```bash
+docker run --gpus all -p 9000:9000 --ipc=host \
+  -e NANO_MODEL=Qwen/Qwen3-8B -e NANO_PORT=9000 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  ghcr.io/alexjaniak/nano-vllm:<sha>
+```
+
+The image binds `0.0.0.0` (a container on `127.0.0.1` is unreachable through `-p`) and ships a `HEALTHCHECK` on `/ready`, which stays failing until the model is loaded. `--ipc=host` is not optional: the worker runs in its own process and the default 64MB of shared memory is not enough for it.
+
+The build context is the repo root, and the tag is a git SHA rather than `latest` — the same reason `spec-v1.toml` pins a model commit, so an old build stays comparable to the numbers it produced:
+
+```bash
+TAG=ghcr.io/alexjaniak/nano-vllm:$(git rev-parse --short HEAD)
+docker build -f docker/Dockerfile -t "$TAG" .
+docker push "$TAG"
+```
+
 ## Benchmarks
 
 `bench/` runs the real head-to-head on a frozen spec — same workload, same
 model commit, same pinned vLLM image, every time, so runs months apart stay
-comparable. The tracked number is nano-vllm's throughput as a fraction of
+comparable. Both engines run the same image they ship as: vLLM's, and the one
+above. The tracked number is nano-vllm's throughput as a fraction of
 vLLM's, per scenario, in `bench/HISTORY.md`.
 
 ```bash

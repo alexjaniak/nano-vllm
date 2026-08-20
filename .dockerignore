@@ -1,0 +1,7 @@
+# The build context is the repo root; keep it to what the image installs.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!src/
+**/__pycache__/
